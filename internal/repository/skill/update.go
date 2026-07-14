@@ -11,12 +11,17 @@ import (
 
 // UpdateParams holds optional fields to update.
 type UpdateParams struct {
-	Name        *string
-	Description *string
-	CategoryID  *string
-	Tags        json.RawMessage // nil means no change
-	Visibility  *model.Visibility
-	Version     *string
+	Name          *string
+	Description   *string
+	CategoryID    *string
+	Tags          json.RawMessage // nil means no change
+	Visibility    *model.Visibility
+	Version       *string
+	ReadmeContent *string
+	FileName      *string
+	FileURL       *string
+	FileSize      *int64
+	FileSHA256    *string
 }
 
 // Update updates the specified fields on a skill. Returns the number of affected rows.
@@ -47,6 +52,26 @@ func (r *Repo) Update(ctx context.Context, id string, p UpdateParams) (int64, er
 	if p.Version != nil {
 		sets = append(sets, "version = ?")
 		args = append(args, *p.Version)
+	}
+	if p.ReadmeContent != nil {
+		sets = append(sets, "readme_content = ?")
+		args = append(args, *p.ReadmeContent)
+	}
+	if p.FileName != nil {
+		sets = append(sets, "file_name = ?")
+		args = append(args, *p.FileName)
+	}
+	if p.FileURL != nil {
+		sets = append(sets, "file_url = ?")
+		args = append(args, *p.FileURL)
+	}
+	if p.FileSize != nil {
+		sets = append(sets, "file_size = ?")
+		args = append(args, *p.FileSize)
+	}
+	if p.FileSHA256 != nil {
+		sets = append(sets, "file_sha256 = ?")
+		args = append(args, *p.FileSHA256)
 	}
 
 	if len(sets) == 0 {

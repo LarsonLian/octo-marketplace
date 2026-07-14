@@ -10,7 +10,10 @@ import (
 type ParseTaskRow struct {
 	ID                string
 	UploadID          string
+	FileName          string
+	FileSize          int64
 	FileURL           string
+	FileSHA256        string
 	Status            string
 	ResultName        string
 	ResultDescription *string
@@ -19,21 +22,23 @@ type ParseTaskRow struct {
 	ResultReadme      *string
 	OwnerID           string
 	SpaceID           string
+	SkillID           string
 }
 
 // GetParseTask retrieves a parse task by ID.
 func (r *Repo) GetParseTask(ctx context.Context, id string) (*ParseTaskRow, error) {
 	query := `
-		SELECT id, upload_id, file_url, status, result_name, result_description,
-			result_version, result_tags, result_readme, owner_id, space_id
+		SELECT id, upload_id, file_name, file_size, file_url, file_sha256, status,
+			result_name, result_description, result_version, result_tags, result_readme,
+			owner_id, space_id, skill_id
 		FROM parse_tasks
 		WHERE id = ?
 	`
 	var pt ParseTaskRow
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
-		&pt.ID, &pt.UploadID, &pt.FileURL, &pt.Status,
-		&pt.ResultName, &pt.ResultDescription, &pt.ResultVersion,
-		&pt.ResultTags, &pt.ResultReadme, &pt.OwnerID, &pt.SpaceID,
+		&pt.ID, &pt.UploadID, &pt.FileName, &pt.FileSize, &pt.FileURL, &pt.FileSHA256,
+		&pt.Status, &pt.ResultName, &pt.ResultDescription, &pt.ResultVersion,
+		&pt.ResultTags, &pt.ResultReadme, &pt.OwnerID, &pt.SpaceID, &pt.SkillID,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil

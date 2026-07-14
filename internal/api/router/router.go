@@ -26,10 +26,15 @@ type Pinger interface {
 
 // StorageConfig holds configuration for the storage layer.
 type StorageConfig struct {
-	Driver   string // "local" or "oss"
-	LocalDir string
-	BaseURL  string
-	MaxMB    int
+	Driver       string // "local" or "oss"
+	LocalDir     string
+	BaseURL      string
+	MaxMB        int
+	OSSEndpoint  string
+	OSSBucket    string
+	OSSAccessKey string
+	OSSSecretKey string
+	OSSRegion    string
 }
 
 func Public(database Pinger, authenticator *marketmiddleware.Authenticator, storageCfg StorageConfig) *gin.Engine {
@@ -77,15 +82,25 @@ func Public(database Pinger, authenticator *marketmiddleware.Authenticator, stor
 		// Wire up upload/parse/download handlers
 		var store storage.Storage
 		var localStorage *storage.LocalStorage
-		if storageCfg.Driver == "local" {
+		switch storageCfg.Driver {
+		case "local":
 			ls := storage.NewLocal(storageCfg.LocalDir, storageCfg.BaseURL)
 			store = ls
 			localStorage = ls
-		} else {
-			// For OSS/S3, use local storage as fallback for now
-			ls := storage.NewLocal(storageCfg.LocalDir, storageCfg.BaseURL)
-			store = ls
-			localStorage = ls
+		case "oss":
+			oss, err := storage.NewOSS(storage.OSSConfig{
+				Endpoint:  storageCfg.OSSEndpoint,
+				Bucket:    storageCfg.OSSBucket,
+				AccessKey: storageCfg.OSSAccessKey,
+				SecretKey: storageCfg.OSSSecretKey,
+				Region:    storageCfg.OSSRegion,
+			})
+			if err != nil {
+				panic("storage driver oss: " + err.Error())
+			}
+			store = oss
+		default:
+			panic("unsupported STORAGE_DRIVER: " + storageCfg.Driver)
 		}
 
 		parseRepo := parsesvc.NewRepo(db)

@@ -103,3 +103,53 @@ func TestLocalStorage_DeleteObject(t *testing.T) {
 		t.Errorf("delete nonexistent should not error: %v", err)
 	}
 }
+
+func TestLocalStorage_PathTraversal(t *testing.T) {
+	tmpDir := t.TempDir()
+	ls := NewLocal(tmpDir, "http://localhost:8092")
+
+	traversalKeys := []string{
+		"../../../etc/passwd",
+		"skills/../../etc/passwd",
+		"/etc/passwd",
+		"skills/../../../etc/shadow",
+		"..\\..\\windows\\system32\\config\\sam",
+	}
+
+	for _, key := range traversalKeys {
+		t.Run("WriteObject_"+key, func(t *testing.T) {
+			err := ls.WriteObject(key, strings.NewReader("evil"))
+			if err == nil {
+				t.Errorf("WriteObject(%q) should have been rejected", key)
+			}
+		})
+
+		t.Run("GetObject_"+key, func(t *testing.T) {
+			_, err := ls.GetObject(context.Background(), key)
+			if err == nil {
+				t.Errorf("GetObject(%q) should have been rejected", key)
+			}
+		})
+
+		t.Run("PresignPut_"+key, func(t *testing.T) {
+			_, _, err := ls.PresignPut(context.Background(), key, "", 0)
+			if err == nil {
+				t.Errorf("PresignPut(%q) should have been rejected", key)
+			}
+		})
+
+		t.Run("PresignGet_"+key, func(t *testing.T) {
+			_, err := ls.PresignGet(context.Background(), key, 0)
+			if err == nil {
+				t.Errorf("PresignGet(%q) should have been rejected", key)
+			}
+		})
+
+		t.Run("DeleteObject_"+key, func(t *testing.T) {
+			err := ls.DeleteObject(context.Background(), key)
+			if err == nil {
+				t.Errorf("DeleteObject(%q) should have been rejected", key)
+			}
+		})
+	}
+}

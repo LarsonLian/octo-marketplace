@@ -55,10 +55,14 @@ func main() {
 	publicServer := &http.Server{
 		Addr: ":" + cfg.APIPort,
 		Handler: router.Public(database, authenticator, router.StorageConfig{
-			Driver:   cfg.StorageDriver,
-			LocalDir: cfg.LocalStorageDir,
-			BaseURL:  "http://127.0.0.1:" + cfg.APIPort,
-			MaxMB:    cfg.MaxUploadMB,
+			Driver:       cfg.StorageDriver,
+			LocalDir:     cfg.LocalStorageDir,
+			BaseURL:      "http://127.0.0.1:" + cfg.APIPort,
+			MaxMB:        cfg.MaxUploadMB,
+			OSSEndpoint:  cfg.OSSEndpoint,
+			OSSBucket:    cfg.OSSBucket,
+			OSSAccessKey: cfg.OSSAccessKey,
+			OSSSecretKey: cfg.OSSSecretKey,
 		}),
 		ReadHeaderTimeout: cfg.ReadHeaderTimeout,
 		ReadTimeout:       cfg.ReadTimeout,

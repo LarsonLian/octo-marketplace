@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 
 	"github.com/Mininglamp-OSS/octo-marketplace/internal/model"
 	categoryrepo "github.com/Mininglamp-OSS/octo-marketplace/internal/repository/category"
@@ -210,10 +209,10 @@ func (s *Service) Create(ctx context.Context, p CreateParams) (*SkillItem, error
 		Visibility:    toVisibility(visibility),
 		Version:       version,
 		ReadmeContent: readmeContent,
-		FileName:      fmt.Sprintf("skill-%s.zip", id[:8]),
+		FileName:      pt.FileName,
 		FileURL:       pt.FileURL,
-		FileSize:      0,
-		FileSHA256:    "",
+		FileSize:      pt.FileSize,
+		FileSHA256:    pt.FileSHA256,
 	})
 	if err != nil {
 		if errors.Is(err, skillrepo.ErrParseTaskAlreadyConsumed) {
@@ -234,6 +233,7 @@ type UpdateParams struct {
 	Tags        json.RawMessage
 	Visibility  *string
 	Version     *string
+	ParseTaskID string // optional: if set, applies reupload parse results
 }
 
 // Update updates a skill. Only the owner within the same space can update.
@@ -262,14 +262,63 @@ func (s *Service) Update(ctx context.Context, id, userID, spaceID string, p Upda
 		vis = toVisibilityPtr(*p.Visibility)
 	}
 
-	_, err = s.repo.Update(ctx, id, skillrepo.UpdateParams{
+	repoParams := skillrepo.UpdateParams{
 		Name:        p.Name,
 		Description: p.Description,
 		CategoryID:  p.CategoryID,
 		Tags:        p.Tags,
 		Visibility:  vis,
 		Version:     p.Version,
-	})
+	}
+
+	// If a parse_task_id is provided, apply reupload results
+	if p.ParseTaskID != "" {
+		pt, err := s.repo.GetParseTask(ctx, p.ParseTaskID)
+		if err != nil {
+			return nil, err
+		}
+		if pt == nil || pt.OwnerID != userID || pt.Status != "success" {
+			return nil, ErrInvalidParseTask
+		}
+		if pt.SpaceID != spaceID {
+			return nil, ErrInvalidParseTask
+		}
+		// Validate the task is associated with this skill (reupload)
+		if pt.SkillID != "" && pt.SkillID != id {
+			return nil, ErrInvalidParseTask
+		}
+
+		// Apply file metadata from parse task
+		repoParams.FileName = &pt.FileName
+		repoParams.FileURL = &pt.FileURL
+		repoParams.FileSize = &pt.FileSize
+		repoParams.FileSHA256 = &pt.FileSHA256
+
+		// Apply parsed content if not overridden in the request
+		if pt.ResultReadme != nil {
+			repoParams.ReadmeContent = pt.ResultReadme
+		}
+		// If name/description/version/tags not set in request, use parse results
+		if p.Name == nil && pt.ResultName != "" {
+			repoParams.Name = &pt.ResultName
+		}
+		if p.Description == nil && pt.ResultDescription != nil {
+			repoParams.Description = pt.ResultDescription
+		}
+		if p.Version == nil && pt.ResultVersion != "" {
+			repoParams.Version = &pt.ResultVersion
+		}
+		if p.Tags == nil && pt.ResultTags != nil {
+			repoParams.Tags = pt.ResultTags
+		}
+
+		// Mark parse task as consumed
+		if err := s.repo.MarkParseTaskConsumed(ctx, p.ParseTaskID); err != nil {
+			return nil, err
+		}
+	}
+
+	_, err = s.repo.Update(ctx, id, repoParams)
 	if err != nil {
 		return nil, err
 	}
