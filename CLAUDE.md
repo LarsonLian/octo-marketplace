@@ -74,6 +74,9 @@ Never execute Skill code or launch MCP servers inside Marketplace.
 ## Security Rules
 
 - Health endpoints may remain unauthenticated; document any other public route.
+- `AUTH_ENABLED` defaults to `false` for standalone development; production
+  must set it to `true`. Disabled mode uses fixed `DEV_AUTH_*` values, never
+  caller-supplied identity headers.
 - Resolve identity from the Octo token. Never trust body/query identity fields.
 - Validate Space membership/role and agent ownership using authoritative APIs.
 - Tenant-owned queries must include scope predicates even after middleware.

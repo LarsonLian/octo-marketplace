@@ -44,3 +44,17 @@ func TestInvalidDurationFallsBack(t *testing.T) {
 		t.Fatalf("ReadTimeout=%v want=15s", got)
 	}
 }
+
+func TestAuthDisabledByDefault(t *testing.T) {
+	t.Setenv("AUTH_ENABLED", "")
+	if Load().AuthEnabled {
+		t.Fatal("AuthEnabled=true want=false")
+	}
+}
+
+func TestAuthEnabledRequiresOctoAPIURL(t *testing.T) {
+	cfg := Config{MySQLDSN: "dsn", APIPort: "8092", AuthEnabled: true}
+	if err := cfg.ValidateAPI(); err == nil {
+		t.Fatal("ValidateAPI() error=nil want OCTO_API_URL error")
+	}
+}

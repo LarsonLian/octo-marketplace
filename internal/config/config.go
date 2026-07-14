@@ -12,6 +12,12 @@ type Config struct {
 	MySQLDSN          string
 	OctoAPIURL        string
 	APIPort           string
+	AuthEnabled       bool
+	AuthCacheTTL      time.Duration
+	AuthCacheCapacity int
+	DevAuthUID        string
+	DevAuthName       string
+	DevSpaceID        string
 	ReadHeaderTimeout time.Duration
 	ReadTimeout       time.Duration
 	WriteTimeout      time.Duration
@@ -23,6 +29,12 @@ func Load() Config {
 		MySQLDSN:          env("MYSQL_DSN", ""),
 		OctoAPIURL:        strings.TrimRight(env("OCTO_API_URL", ""), "/"),
 		APIPort:           env("API_PORT", "8092"),
+		AuthEnabled:       envBool("AUTH_ENABLED", false),
+		AuthCacheTTL:      envDuration("AUTH_CACHE_TTL", 30*time.Second),
+		AuthCacheCapacity: envInt("AUTH_CACHE_CAPACITY", 10000),
+		DevAuthUID:        env("DEV_AUTH_UID", "dev-user"),
+		DevAuthName:       env("DEV_AUTH_NAME", "Developer"),
+		DevSpaceID:        env("DEV_SPACE_ID", "dev-space"),
 		ReadHeaderTimeout: envDuration("HTTP_READ_HEADER_TIMEOUT", 5*time.Second),
 		ReadTimeout:       envDuration("HTTP_READ_TIMEOUT", 15*time.Second),
 		WriteTimeout:      envDuration("HTTP_WRITE_TIMEOUT", 30*time.Second),
@@ -33,6 +45,9 @@ func Load() Config {
 func (c Config) ValidateAPI() error {
 	if c.MySQLDSN == "" {
 		return fmt.Errorf("MYSQL_DSN is required")
+	}
+	if c.AuthEnabled && c.OctoAPIURL == "" {
+		return fmt.Errorf("OCTO_API_URL is required when AUTH_ENABLED=true")
 	}
 	return validatePort(c.APIPort, "API_PORT")
 }
@@ -58,6 +73,30 @@ func envDuration(key string, fallback time.Duration) time.Duration {
 		return fallback
 	}
 	parsed, err := time.ParseDuration(value)
+	if err != nil || parsed <= 0 {
+		return fallback
+	}
+	return parsed
+}
+
+func envBool(key string, fallback bool) bool {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+func envInt(key string, fallback int) int {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
 	if err != nil || parsed <= 0 {
 		return fallback
 	}

@@ -4,13 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+
+	marketmiddleware "github.com/Mininglamp-OSS/octo-marketplace/internal/middleware"
 )
 
 type Pinger interface {
 	PingContext(context.Context) error
 }
 
-func Public(database Pinger) http.Handler {
+func Public(database Pinger, authenticator *marketmiddleware.Authenticator) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", jsonStatus(http.StatusOK, "ok"))
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
@@ -20,6 +22,20 @@ func Public(database Pinger) http.Handler {
 		}
 		writeStatus(w, http.StatusOK, "ready")
 	})
+	session := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		identity, ok := marketmiddleware.IdentityFromContext(r.Context())
+		if !ok {
+			writeStatus(w, http.StatusInternalServerError, "error")
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"uid":      identity.UID,
+			"name":     identity.Name,
+			"space_id": marketmiddleware.SpaceIDFromContext(r.Context()),
+		})
+	})
+	mux.Handle("GET /api/v1/session", authenticator.Wrap(session))
 	return mux
 }
 

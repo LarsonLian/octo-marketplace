@@ -35,7 +35,7 @@ func (r *HTTPResolver) Resolve(ctx context.Context, token string) (model.Identit
 	if err != nil {
 		return model.Identity{}, fmt.Errorf("encode verify request: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, r.baseURL+"/v1/auth/verify", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, r.baseURL+"/v1/auth/verify?include=context", bytes.NewReader(body))
 	if err != nil {
 		return model.Identity{}, fmt.Errorf("create verify request: %w", err)
 	}

@@ -10,8 +10,11 @@ import (
 	"time"
 
 	"github.com/Mininglamp-OSS/octo-marketplace/internal/api/router"
+	"github.com/Mininglamp-OSS/octo-marketplace/internal/auth"
 	"github.com/Mininglamp-OSS/octo-marketplace/internal/config"
 	marketdb "github.com/Mininglamp-OSS/octo-marketplace/internal/db"
+	"github.com/Mininglamp-OSS/octo-marketplace/internal/middleware"
+	"github.com/Mininglamp-OSS/octo-marketplace/internal/model"
 )
 
 func main() {
@@ -29,10 +32,27 @@ func main() {
 	} else if n > 0 {
 		log.Printf("[main] applied %d migration(s)", n)
 	}
+	var resolver auth.Resolver
+	if cfg.AuthEnabled {
+		resolver = auth.NewCachedResolver(
+			auth.NewHTTPResolver(cfg.OctoAPIURL),
+			cfg.AuthCacheTTL,
+			cfg.AuthCacheCapacity,
+		)
+		log.Printf("[auth] enabled")
+	} else {
+		log.Printf("[auth] disabled; using development identity %q in Space %q", cfg.DevAuthUID, cfg.DevSpaceID)
+	}
+	authenticator := middleware.NewAuthenticator(
+		cfg.AuthEnabled,
+		resolver,
+		model.Identity{UID: cfg.DevAuthUID, Name: cfg.DevAuthName},
+		cfg.DevSpaceID,
+	)
 
 	publicServer := &http.Server{
 		Addr:              ":" + cfg.APIPort,
-		Handler:           router.Public(database),
+		Handler:           router.Public(database, authenticator),
 		ReadHeaderTimeout: cfg.ReadHeaderTimeout,
 		ReadTimeout:       cfg.ReadTimeout,
 		WriteTimeout:      cfg.WriteTimeout,
