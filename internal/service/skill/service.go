@@ -32,6 +32,9 @@ var ErrForbidden = errors.New("forbidden")
 // ErrInvalidParseTask indicates the parse task is invalid for creating a skill.
 var ErrInvalidParseTask = errors.New("invalid parse task")
 
+// ErrParseTaskConsumed indicates the parse task has already been used to create a skill.
+var ErrParseTaskConsumed = errors.New("parse task already consumed")
+
 // ErrCategoryNotFound indicates the specified category does not exist.
 var ErrCategoryNotFound = errors.New("category not found")
 
@@ -145,6 +148,10 @@ func (s *Service) Create(ctx context.Context, p CreateParams) (*SkillItem, error
 	if pt == nil || pt.OwnerID != p.UserID || pt.Status != "success" {
 		return nil, ErrInvalidParseTask
 	}
+	// Enforce space isolation: parse task must belong to the same space
+	if pt.SpaceID != p.SpaceID {
+		return nil, ErrInvalidParseTask
+	}
 
 	// Validate category
 	if p.CategoryID != "" {
@@ -191,7 +198,7 @@ func (s *Service) Create(ctx context.Context, p CreateParams) (*SkillItem, error
 	}
 
 	id := s.idGen()
-	row, err := s.repo.Create(ctx, skillrepo.CreateParams{
+	row, err := s.repo.CreateSkillAndConsumeTask(ctx, p.ParseTaskID, skillrepo.CreateParams{
 		ID:            id,
 		Name:          name,
 		Description:   description,
@@ -209,11 +216,11 @@ func (s *Service) Create(ctx context.Context, p CreateParams) (*SkillItem, error
 		FileSHA256:    "",
 	})
 	if err != nil {
+		if errors.Is(err, skillrepo.ErrParseTaskAlreadyConsumed) {
+			return nil, ErrParseTaskConsumed
+		}
 		return nil, err
 	}
-
-	// Mark parse task as consumed
-	_ = s.repo.MarkParseTaskConsumed(ctx, p.ParseTaskID)
 
 	item := rowToItem(row)
 	return &item, nil
@@ -229,13 +236,13 @@ type UpdateParams struct {
 	Version     *string
 }
 
-// Update updates a skill. Only the owner can update.
-func (s *Service) Update(ctx context.Context, id, userID string, p UpdateParams) (*SkillItem, error) {
+// Update updates a skill. Only the owner within the same space can update.
+func (s *Service) Update(ctx context.Context, id, userID, spaceID string, p UpdateParams) (*SkillItem, error) {
 	row, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	if row == nil || row.OwnerID != userID {
+	if row == nil || row.OwnerID != userID || row.SpaceID != spaceID {
 		return nil, ErrNotFound
 	}
 
@@ -276,13 +283,13 @@ func (s *Service) Update(ctx context.Context, id, userID string, p UpdateParams)
 	return &item, nil
 }
 
-// Delete hard-deletes a skill. Only the owner can delete.
-func (s *Service) Delete(ctx context.Context, id, userID string) error {
+// Delete hard-deletes a skill. Only the owner within the same space can delete.
+func (s *Service) Delete(ctx context.Context, id, userID, spaceID string) error {
 	row, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		return err
 	}
-	if row == nil || row.OwnerID != userID {
+	if row == nil || row.OwnerID != userID || row.SpaceID != spaceID {
 		return ErrNotFound
 	}
 	_, err = s.repo.Delete(ctx, id)
@@ -301,7 +308,8 @@ func toVisibilityPtr(v string) *model.Visibility {
 func canView(row *skillrepo.SkillRow, spaceID, userID string) bool {
 	switch row.Visibility {
 	case "public":
-		return row.SpaceID == spaceID
+		// Public skills are globally visible to all authenticated users.
+		return true
 	case "space":
 		return row.SpaceID == spaceID
 	case "private":

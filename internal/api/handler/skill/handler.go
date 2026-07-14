@@ -163,6 +163,10 @@ func (h *Handler) Create(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"code": -1, "message": "invalid or unavailable parse task"})
 			return
 		}
+		if errors.Is(err, skillsvc.ErrParseTaskConsumed) {
+			c.JSON(http.StatusConflict, gin.H{"code": -1, "message": "parse task already consumed"})
+			return
+		}
 		if errors.Is(err, skillsvc.ErrCategoryNotFound) {
 			c.JSON(http.StatusBadRequest, gin.H{"code": -1, "message": "category not found"})
 			return
@@ -194,6 +198,7 @@ func (h *Handler) Update(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"code": -1, "message": "unauthorized"})
 		return
 	}
+	spaceID := middleware.SpaceID(c)
 	id := c.Param("id")
 
 	var req updateRequest
@@ -202,7 +207,7 @@ func (h *Handler) Update(c *gin.Context) {
 		return
 	}
 
-	item, err := h.svc.Update(c.Request.Context(), id, identity.UID, skillsvc.UpdateParams{
+	item, err := h.svc.Update(c.Request.Context(), id, identity.UID, spaceID, skillsvc.UpdateParams{
 		Name:        req.Name,
 		Description: req.Description,
 		CategoryID:  req.CategoryID,
@@ -236,9 +241,10 @@ func (h *Handler) Delete(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"code": -1, "message": "unauthorized"})
 		return
 	}
+	spaceID := middleware.SpaceID(c)
 	id := c.Param("id")
 
-	err := h.svc.Delete(c.Request.Context(), id, identity.UID)
+	err := h.svc.Delete(c.Request.Context(), id, identity.UID, spaceID)
 	if err != nil {
 		if errors.Is(err, skillsvc.ErrNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"code": -1, "message": "not found"})

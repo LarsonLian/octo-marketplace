@@ -18,18 +18,18 @@ func TestCanView(t *testing.T) {
 		expected bool
 	}{
 		{
-			name:     "public same space",
+			name:     "public is globally visible",
 			row:      &skillrepo.SkillRow{Visibility: "public", SpaceID: "s1", OwnerID: "u1"},
 			spaceID:  "s1",
 			userID:   "u2",
 			expected: true,
 		},
 		{
-			name:     "public different space",
+			name:     "public is visible cross-space",
 			row:      &skillrepo.SkillRow{Visibility: "public", SpaceID: "s1", OwnerID: "u1"},
 			spaceID:  "s2",
 			userID:   "u2",
-			expected: false,
+			expected: true,
 		},
 		{
 			name:     "space same space",
@@ -39,10 +39,17 @@ func TestCanView(t *testing.T) {
 			expected: true,
 		},
 		{
-			name:     "space different space",
+			name:     "space different space is hidden",
 			row:      &skillrepo.SkillRow{Visibility: "space", SpaceID: "s1", OwnerID: "u1"},
 			spaceID:  "s2",
 			userID:   "u2",
+			expected: false,
+		},
+		{
+			name:     "space different space even for owner",
+			row:      &skillrepo.SkillRow{Visibility: "space", SpaceID: "s1", OwnerID: "u1"},
+			spaceID:  "s2",
+			userID:   "u1",
 			expected: false,
 		},
 		{
@@ -58,6 +65,13 @@ func TestCanView(t *testing.T) {
 			spaceID:  "s1",
 			userID:   "u2",
 			expected: false,
+		},
+		{
+			name:     "private cross-space owner",
+			row:      &skillrepo.SkillRow{Visibility: "private", SpaceID: "s1", OwnerID: "u1"},
+			spaceID:  "s2",
+			userID:   "u1",
+			expected: true,
 		},
 		{
 			name:     "unknown visibility",
@@ -126,6 +140,12 @@ func TestErrNotFound(t *testing.T) {
 func TestErrInvalidParseTask(t *testing.T) {
 	if !errors.Is(ErrInvalidParseTask, ErrInvalidParseTask) {
 		t.Error("ErrInvalidParseTask should be identifiable")
+	}
+}
+
+func TestErrParseTaskConsumed(t *testing.T) {
+	if !errors.Is(ErrParseTaskConsumed, ErrParseTaskConsumed) {
+		t.Error("ErrParseTaskConsumed should be identifiable")
 	}
 }
 
