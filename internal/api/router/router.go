@@ -2,51 +2,57 @@ package router
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 
 	marketmiddleware "github.com/Mininglamp-OSS/octo-marketplace/internal/middleware"
+	"github.com/gin-gonic/gin"
 )
 
 type Pinger interface {
 	PingContext(context.Context) error
 }
 
-func Public(database Pinger, authenticator *marketmiddleware.Authenticator) http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", jsonStatus(http.StatusOK, "ok"))
-	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
-		if err := database.PingContext(r.Context()); err != nil {
-			writeStatus(w, http.StatusServiceUnavailable, "not_ready")
-			return
-		}
-		writeStatus(w, http.StatusOK, "ready")
+func Public(database Pinger, authenticator *marketmiddleware.Authenticator) *gin.Engine {
+	r := gin.New()
+	r.Use(gin.Logger(), gin.Recovery(), corsMiddleware())
+
+	r.GET("/healthz", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
-	session := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		identity, ok := marketmiddleware.IdentityFromContext(r.Context())
-		if !ok {
-			writeStatus(w, http.StatusInternalServerError, "error")
+	r.GET("/readyz", func(c *gin.Context) {
+		if err := database.PingContext(c.Request.Context()); err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "not_ready"})
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
+		c.JSON(http.StatusOK, gin.H{"status": "ready"})
+	})
+
+	v1 := r.Group("/api/v1")
+	v1.Use(authenticator.Handler())
+	v1.GET("/session", func(c *gin.Context) {
+		identity, ok := marketmiddleware.Identity(c)
+		if !ok {
+			c.JSON(http.StatusInternalServerError, gin.H{"status": "error"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
 			"uid":      identity.UID,
 			"name":     identity.Name,
-			"space_id": marketmiddleware.SpaceIDFromContext(r.Context()),
+			"space_id": marketmiddleware.SpaceID(c),
 		})
 	})
-	mux.Handle("GET /api/v1/session", authenticator.Wrap(session))
-	return mux
+	return r
 }
 
-func jsonStatus(status int, value string) http.HandlerFunc {
-	return func(w http.ResponseWriter, _ *http.Request) {
-		writeStatus(w, status, value)
+func corsMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Header("Access-Control-Allow-Origin", "*")
+		c.Header("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS")
+		c.Header("Access-Control-Allow-Headers", "Content-Type,Authorization,Token,X-Space-Id,X-Request-Id")
+		if c.Request.Method == http.MethodOptions {
+			c.AbortWithStatus(http.StatusNoContent)
+			return
+		}
+		c.Next()
 	}
-}
-
-func writeStatus(w http.ResponseWriter, status int, value string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]string{"status": value})
 }

@@ -18,6 +18,7 @@ been implemented yet.
 - Go version: 1.25
 - Default branch: `main`
 - Database driver: `github.com/go-sql-driver/mysql`
+- HTTP framework: Gin
 
 ## Common Commands
 

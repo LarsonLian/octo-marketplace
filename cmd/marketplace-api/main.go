@@ -15,9 +15,11 @@ import (
 	marketdb "github.com/Mininglamp-OSS/octo-marketplace/internal/db"
 	"github.com/Mininglamp-OSS/octo-marketplace/internal/middleware"
 	"github.com/Mininglamp-OSS/octo-marketplace/internal/model"
+	"github.com/gin-gonic/gin"
 )
 
 func main() {
+	gin.SetMode(gin.ReleaseMode)
 	cfg := config.Load()
 	if err := cfg.ValidateAPI(); err != nil {
 		log.Fatal(err)

@@ -127,8 +127,7 @@ secret redaction. Use integration tags for tests requiring external services.
 - Never add `Co-Authored-By` commit trailers.
 - Run `gofmt` for changed Go files.
 - Keep changes focused and avoid speculative frameworks or abstractions.
-- Prefer standard library functionality until a concrete requirement justifies
-  a dependency.
+- Use Gin for HTTP routing and middleware, matching the other OCTO Go services.
 - Never commit credentials or generated local environment files.
 
 <!-- octospec:begin -->
