@@ -9,18 +9,20 @@ import (
 	"github.com/Mininglamp-OSS/octo-marketplace/internal/model"
 	categoryrepo "github.com/Mininglamp-OSS/octo-marketplace/internal/repository/category"
 	skillrepo "github.com/Mininglamp-OSS/octo-marketplace/internal/repository/skill"
+	"github.com/Mininglamp-OSS/octo-marketplace/internal/storage"
 )
 
 // Service handles business logic for skills.
 type Service struct {
-	repo     *skillrepo.Repo
-	catRepo  *categoryrepo.Repo
-	idGen    func() string
+	repo    *skillrepo.Repo
+	catRepo *categoryrepo.Repo
+	store   storage.Storage
+	idGen   func() string
 }
 
 // New creates a skill service.
-func New(repo *skillrepo.Repo, catRepo *categoryrepo.Repo, idGen func() string) *Service {
-	return &Service{repo: repo, catRepo: catRepo, idGen: idGen}
+func New(repo *skillrepo.Repo, catRepo *categoryrepo.Repo, store storage.Storage, idGen func() string) *Service {
+	return &Service{repo: repo, catRepo: catRepo, store: store, idGen: idGen}
 }
 
 // ErrNotFound indicates the skill was not found or access denied.
@@ -152,6 +154,10 @@ func (s *Service) Create(ctx context.Context, p CreateParams) (*SkillItem, error
 	if pt.SpaceID != p.SpaceID {
 		return nil, ErrInvalidParseTask
 	}
+	// Reject reupload tasks — they must be used with PUT update, not POST create
+	if pt.SkillID != "" {
+		return nil, ErrInvalidParseTask
+	}
 
 	// Validate category
 	if p.CategoryID != "" {
@@ -198,6 +204,18 @@ func (s *Service) Create(ctx context.Context, p CreateParams) (*SkillItem, error
 	}
 
 	id := s.idGen()
+
+	// Compute final object key: skills/{skill_id}/v{version}/{file_name}
+	finalKey := fmt.Sprintf("skills/%s/v%s/%s", id, version, pt.FileName)
+
+	// Relocate the file BEFORE committing the DB transaction.
+	// If copy fails, we don't consume the parse task — user can retry.
+	if pt.FileURL != finalKey {
+		if err := s.store.CopyObject(ctx, pt.FileURL, finalKey); err != nil {
+			return nil, fmt.Errorf("relocate uploaded file: %w", err)
+		}
+	}
+
 	row, err := s.repo.CreateSkillAndConsumeTask(ctx, p.ParseTaskID, skillrepo.CreateParams{
 		ID:            id,
 		Name:          name,
@@ -210,10 +228,10 @@ func (s *Service) Create(ctx context.Context, p CreateParams) (*SkillItem, error
 		Visibility:    toVisibility(visibility),
 		Version:       version,
 		ReadmeContent: readmeContent,
-		FileName:      fmt.Sprintf("skill-%s.zip", id[:8]),
-		FileURL:       pt.FileURL,
-		FileSize:      0,
-		FileSHA256:    "",
+		FileName:      pt.FileName,
+		FileURL:       finalKey,
+		FileSize:      pt.FileSize,
+		FileSHA256:    pt.FileSHA256,
 	})
 	if err != nil {
 		if errors.Is(err, skillrepo.ErrParseTaskAlreadyConsumed) {
@@ -234,6 +252,7 @@ type UpdateParams struct {
 	Tags        json.RawMessage
 	Visibility  *string
 	Version     *string
+	ParseTaskID string // optional: if set, applies reupload parse results
 }
 
 // Update updates a skill. Only the owner within the same space can update.
@@ -262,14 +281,98 @@ func (s *Service) Update(ctx context.Context, id, userID, spaceID string, p Upda
 		vis = toVisibilityPtr(*p.Visibility)
 	}
 
-	_, err = s.repo.Update(ctx, id, skillrepo.UpdateParams{
+	repoParams := skillrepo.UpdateParams{
 		Name:        p.Name,
 		Description: p.Description,
 		CategoryID:  p.CategoryID,
 		Tags:        p.Tags,
 		Visibility:  vis,
 		Version:     p.Version,
-	})
+	}
+
+	// If a parse_task_id is provided, apply reupload results
+	if p.ParseTaskID != "" {
+		pt, err := s.repo.GetParseTask(ctx, p.ParseTaskID)
+		if err != nil {
+			return nil, err
+		}
+		if pt == nil || pt.OwnerID != userID || pt.Status != "success" {
+			return nil, ErrInvalidParseTask
+		}
+		if pt.SpaceID != spaceID {
+			return nil, ErrInvalidParseTask
+		}
+		// Validate the task is associated with this skill (reupload)
+		if pt.SkillID != "" && pt.SkillID != id {
+			return nil, ErrInvalidParseTask
+		}
+
+		// Determine version for final key
+		version := row.Version
+		if p.Version != nil {
+			version = *p.Version
+		} else if pt.ResultVersion != "" {
+			version = pt.ResultVersion
+		}
+
+		// Compute final object key
+		finalKey := fmt.Sprintf("skills/%s/v%s/%s", id, version, pt.FileName)
+
+		// Apply file metadata from parse task
+		repoParams.FileName = &pt.FileName
+		repoParams.FileSize = &pt.FileSize
+		repoParams.FileSHA256 = &pt.FileSHA256
+		repoParams.FileURL = &finalKey
+
+		// Apply parsed content if not overridden in the request
+		if pt.ResultReadme != nil {
+			repoParams.ReadmeContent = pt.ResultReadme
+		}
+		// If name/description/version/tags not set in request, use parse results
+		if p.Name == nil && pt.ResultName != "" {
+			repoParams.Name = &pt.ResultName
+		}
+		if p.Description == nil && pt.ResultDescription != nil {
+			repoParams.Description = pt.ResultDescription
+		}
+		if p.Version == nil && pt.ResultVersion != "" {
+			repoParams.Version = &pt.ResultVersion
+		}
+		if p.Tags == nil && pt.ResultTags != nil {
+			repoParams.Tags = pt.ResultTags
+		}
+
+		// Relocate file BEFORE committing the DB transaction.
+		// If copy fails, we don't consume the parse task — user can retry.
+		if pt.FileURL != finalKey {
+			if err := s.store.CopyObject(ctx, pt.FileURL, finalKey); err != nil {
+				return nil, fmt.Errorf("relocate uploaded file: %w", err)
+			}
+		}
+
+		// Transactionally update skill and consume parse task
+		taskSkillID := pt.SkillID
+		if taskSkillID == "" {
+			taskSkillID = id // for tasks not explicitly linked
+		}
+		err = s.repo.UpdateSkillAndConsumeTask(ctx, id, repoParams, p.ParseTaskID, userID, spaceID, taskSkillID)
+		if err != nil {
+			if errors.Is(err, skillrepo.ErrParseTaskAlreadyConsumed) {
+				return nil, ErrParseTaskConsumed
+			}
+			return nil, err
+		}
+
+		// Re-fetch to return updated data
+		updated, err := s.repo.GetByID(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		item := rowToItem(updated)
+		return &item, nil
+	}
+
+	_, err = s.repo.Update(ctx, id, repoParams)
 	if err != nil {
 		return nil, err
 	}

@@ -189,6 +189,7 @@ type updateRequest struct {
 	Tags        json.RawMessage `json:"tags"`
 	Visibility  *string         `json:"visibility"`
 	Version     *string         `json:"version"`
+	ParseTaskID string          `json:"parse_task_id"`
 }
 
 // Update handles PUT /api/v1/skill/:id
@@ -214,6 +215,7 @@ func (h *Handler) Update(c *gin.Context) {
 		Tags:        req.Tags,
 		Visibility:  req.Visibility,
 		Version:     req.Version,
+		ParseTaskID: req.ParseTaskID,
 	})
 	if err != nil {
 		if errors.Is(err, skillsvc.ErrNotFound) {
@@ -222,6 +224,14 @@ func (h *Handler) Update(c *gin.Context) {
 		}
 		if errors.Is(err, skillsvc.ErrCategoryNotFound) {
 			c.JSON(http.StatusBadRequest, gin.H{"code": -1, "message": "category not found"})
+			return
+		}
+		if errors.Is(err, skillsvc.ErrInvalidParseTask) {
+			c.JSON(http.StatusBadRequest, gin.H{"code": -1, "message": "invalid or unavailable parse task"})
+			return
+		}
+		if errors.Is(err, skillsvc.ErrParseTaskConsumed) {
+			c.JSON(http.StatusConflict, gin.H{"code": -1, "message": "parse task already consumed"})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"code": -1, "message": "internal error"})
