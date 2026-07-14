@@ -208,6 +208,14 @@ func (s *Service) Create(ctx context.Context, p CreateParams) (*SkillItem, error
 	// Compute final object key: skills/{skill_id}/v{version}/{file_name}
 	finalKey := fmt.Sprintf("skills/%s/v%s/%s", id, version, pt.FileName)
 
+	// Relocate the file BEFORE committing the DB transaction.
+	// If copy fails, we don't consume the parse task — user can retry.
+	if pt.FileURL != finalKey {
+		if err := s.store.CopyObject(ctx, pt.FileURL, finalKey); err != nil {
+			return nil, fmt.Errorf("relocate uploaded file: %w", err)
+		}
+	}
+
 	row, err := s.repo.CreateSkillAndConsumeTask(ctx, p.ParseTaskID, skillrepo.CreateParams{
 		ID:            id,
 		Name:          name,
@@ -230,14 +238,6 @@ func (s *Service) Create(ctx context.Context, p CreateParams) (*SkillItem, error
 			return nil, ErrParseTaskConsumed
 		}
 		return nil, err
-	}
-
-	// Relocate the file from temporary upload path to permanent path
-	if pt.FileURL != finalKey {
-		if copyErr := s.store.CopyObject(ctx, pt.FileURL, finalKey); copyErr != nil {
-			// Log but don't fail — the temporary key is still valid for now
-			_ = copyErr
-		}
 	}
 
 	item := rowToItem(row)
@@ -342,6 +342,14 @@ func (s *Service) Update(ctx context.Context, id, userID, spaceID string, p Upda
 			repoParams.Tags = pt.ResultTags
 		}
 
+		// Relocate file BEFORE committing the DB transaction.
+		// If copy fails, we don't consume the parse task — user can retry.
+		if pt.FileURL != finalKey {
+			if err := s.store.CopyObject(ctx, pt.FileURL, finalKey); err != nil {
+				return nil, fmt.Errorf("relocate uploaded file: %w", err)
+			}
+		}
+
 		// Transactionally update skill and consume parse task
 		taskSkillID := pt.SkillID
 		if taskSkillID == "" {
@@ -353,11 +361,6 @@ func (s *Service) Update(ctx context.Context, id, userID, spaceID string, p Upda
 				return nil, ErrParseTaskConsumed
 			}
 			return nil, err
-		}
-
-		// Relocate the file from temporary upload path to permanent path
-		if pt.FileURL != finalKey {
-			_ = s.store.CopyObject(ctx, pt.FileURL, finalKey)
 		}
 
 		// Re-fetch to return updated data
