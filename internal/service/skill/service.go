@@ -13,9 +13,9 @@ import (
 
 // Service handles business logic for skills.
 type Service struct {
-	repo     *skillrepo.Repo
-	catRepo  *categoryrepo.Repo
-	idGen    func() string
+	repo    *skillrepo.Repo
+	catRepo *categoryrepo.Repo
+	idGen   func() string
 }
 
 // New creates a skill service.

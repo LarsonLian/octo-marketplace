@@ -9,11 +9,14 @@ import (
 
 	categoryhandler "github.com/Mininglamp-OSS/octo-marketplace/internal/api/handler/category"
 	skillhandler "github.com/Mininglamp-OSS/octo-marketplace/internal/api/handler/skill"
+	uploadhandler "github.com/Mininglamp-OSS/octo-marketplace/internal/api/handler/upload"
 	marketmiddleware "github.com/Mininglamp-OSS/octo-marketplace/internal/middleware"
 	categoryrepo "github.com/Mininglamp-OSS/octo-marketplace/internal/repository/category"
 	skillrepo "github.com/Mininglamp-OSS/octo-marketplace/internal/repository/skill"
 	categorysvc "github.com/Mininglamp-OSS/octo-marketplace/internal/service/category"
+	parsesvc "github.com/Mininglamp-OSS/octo-marketplace/internal/service/parse"
 	skillsvc "github.com/Mininglamp-OSS/octo-marketplace/internal/service/skill"
+	"github.com/Mininglamp-OSS/octo-marketplace/internal/storage"
 	"github.com/gin-gonic/gin"
 )
 
@@ -21,7 +24,15 @@ type Pinger interface {
 	PingContext(context.Context) error
 }
 
-func Public(database Pinger, authenticator *marketmiddleware.Authenticator) *gin.Engine {
+// StorageConfig holds configuration for the storage layer.
+type StorageConfig struct {
+	Driver   string // "local" or "oss"
+	LocalDir string
+	BaseURL  string
+	MaxMB    int
+}
+
+func Public(database Pinger, authenticator *marketmiddleware.Authenticator, storageCfg StorageConfig) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery(), corsMiddleware())
 
@@ -62,6 +73,28 @@ func Public(database Pinger, authenticator *marketmiddleware.Authenticator) *gin
 
 		categoryhandler.New(catSvc).Register(v1)
 		skillhandler.New(skSvc).Register(v1)
+
+		// Wire up upload/parse/download handlers
+		var store storage.Storage
+		var localStorage *storage.LocalStorage
+		if storageCfg.Driver == "local" {
+			ls := storage.NewLocal(storageCfg.LocalDir, storageCfg.BaseURL)
+			store = ls
+			localStorage = ls
+		} else {
+			// For OSS/S3, use local storage as fallback for now
+			ls := storage.NewLocal(storageCfg.LocalDir, storageCfg.BaseURL)
+			store = ls
+			localStorage = ls
+		}
+
+		parseRepo := parsesvc.NewRepo(db)
+		worker := parsesvc.NewWorker(store, parseRepo)
+		pSvc := parsesvc.NewService(store, parseRepo, worker, generateID, storageCfg.MaxMB)
+
+		uploadH := uploadhandler.New(pSvc, skSvc, localStorage)
+		uploadH.Register(v1)
+		uploadH.RegisterLocalProxy(r)
 	}
 
 	return r
@@ -88,4 +121,3 @@ func generateID() string {
 	b[8] = (b[8] & 0x3f) | 0x80
 	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
-
