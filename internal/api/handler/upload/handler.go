@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/Mininglamp-OSS/octo-marketplace/internal/api/errcode"
 	"github.com/Mininglamp-OSS/octo-marketplace/internal/middleware"
 	"github.com/Mininglamp-OSS/octo-marketplace/internal/service/parse"
 	skillsvc "github.com/Mininglamp-OSS/octo-marketplace/internal/service/skill"
@@ -56,28 +57,28 @@ type initRequest struct {
 func (h *Handler) InitUpload(c *gin.Context) {
 	identity, ok := middleware.Identity(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"code": -1, "message": "unauthorized"})
+		c.JSON(http.StatusUnauthorized, gin.H{"code": errcode.Unauthorized, "message": "unauthorized"})
 		return
 	}
 	spaceID := middleware.SpaceID(c)
 
 	var req initRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": -1, "message": "file_name and file_size are required"})
+		c.JSON(http.StatusBadRequest, gin.H{"code": errcode.BadRequest, "message": "file_name and file_size are required"})
 		return
 	}
 
 	result, err := h.parseSvc.InitUpload(c.Request.Context(), req.FileName, req.FileSize, identity.UID, spaceID)
 	if err != nil {
 		if errors.Is(err, parse.ErrInvalidFileName) {
-			c.JSON(http.StatusBadRequest, gin.H{"code": -1, "message": "file_name must end with .zip"})
+			c.JSON(http.StatusBadRequest, gin.H{"code": errcode.BadRequest, "message": "file_name must end with .zip"})
 			return
 		}
 		if errors.Is(err, parse.ErrFileTooLarge) {
-			c.JSON(http.StatusBadRequest, gin.H{"code": -1, "message": "file exceeds upload size limit"})
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"code": errcode.FileTooLarge, "message": "file exceeds upload size limit"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"code": -1, "message": "internal error"})
+		c.JSON(http.StatusInternalServerError, gin.H{"code": errcode.InternalError, "message": "internal error"})
 		return
 	}
 
@@ -91,7 +92,7 @@ func (h *Handler) InitUpload(c *gin.Context) {
 func (h *Handler) TriggerParse(c *gin.Context) {
 	identity, ok := middleware.Identity(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"code": -1, "message": "unauthorized"})
+		c.JSON(http.StatusUnauthorized, gin.H{"code": errcode.Unauthorized, "message": "unauthorized"})
 		return
 	}
 
@@ -99,18 +100,18 @@ func (h *Handler) TriggerParse(c *gin.Context) {
 	taskID, err := h.parseSvc.TriggerParse(c.Request.Context(), uploadID, identity.UID)
 	if err != nil {
 		if errors.Is(err, parse.ErrTaskNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"code": -1, "message": "upload not found"})
+			c.JSON(http.StatusNotFound, gin.H{"code": errcode.NotFound, "message": "upload not found"})
 			return
 		}
 		if errors.Is(err, parse.ErrForbidden) {
-			c.JSON(http.StatusNotFound, gin.H{"code": -1, "message": "upload not found"})
+			c.JSON(http.StatusNotFound, gin.H{"code": errcode.NotFound, "message": "upload not found"})
 			return
 		}
 		if errors.Is(err, parse.ErrTaskNotPending) {
-			c.JSON(http.StatusConflict, gin.H{"code": -1, "message": "parse already triggered"})
+			c.JSON(http.StatusConflict, gin.H{"code": errcode.Conflict, "message": "parse already triggered"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"code": -1, "message": "internal error"})
+		c.JSON(http.StatusInternalServerError, gin.H{"code": errcode.InternalError, "message": "internal error"})
 		return
 	}
 
@@ -124,7 +125,7 @@ func (h *Handler) TriggerParse(c *gin.Context) {
 func (h *Handler) PollParse(c *gin.Context) {
 	identity, ok := middleware.Identity(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"code": -1, "message": "unauthorized"})
+		c.JSON(http.StatusUnauthorized, gin.H{"code": errcode.Unauthorized, "message": "unauthorized"})
 		return
 	}
 
@@ -132,10 +133,10 @@ func (h *Handler) PollParse(c *gin.Context) {
 	result, err := h.parseSvc.GetParseStatus(c.Request.Context(), taskID, identity.UID)
 	if err != nil {
 		if errors.Is(err, parse.ErrTaskNotFound) || errors.Is(err, parse.ErrForbidden) {
-			c.JSON(http.StatusNotFound, gin.H{"code": -1, "message": "task not found"})
+			c.JSON(http.StatusNotFound, gin.H{"code": errcode.NotFound, "message": "task not found"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"code": -1, "message": "internal error"})
+		c.JSON(http.StatusInternalServerError, gin.H{"code": errcode.InternalError, "message": "internal error"})
 		return
 	}
 
@@ -155,7 +156,7 @@ type reuploadRequest struct {
 func (h *Handler) InitReupload(c *gin.Context) {
 	identity, ok := middleware.Identity(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"code": -1, "message": "unauthorized"})
+		c.JSON(http.StatusUnauthorized, gin.H{"code": errcode.Unauthorized, "message": "unauthorized"})
 		return
 	}
 	spaceID := middleware.SpaceID(c)
@@ -165,34 +166,34 @@ func (h *Handler) InitReupload(c *gin.Context) {
 	skill, err := h.skillSvc.Get(c.Request.Context(), skillID, spaceID, identity.UID)
 	if err != nil {
 		if errors.Is(err, skillsvc.ErrNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"code": -1, "message": "not found"})
+			c.JSON(http.StatusNotFound, gin.H{"code": errcode.NotFound, "message": "not found"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"code": -1, "message": "internal error"})
+		c.JSON(http.StatusInternalServerError, gin.H{"code": errcode.InternalError, "message": "internal error"})
 		return
 	}
 	if skill.OwnerID != identity.UID {
-		c.JSON(http.StatusNotFound, gin.H{"code": -1, "message": "not found"})
+		c.JSON(http.StatusNotFound, gin.H{"code": errcode.NotFound, "message": "not found"})
 		return
 	}
 
 	var req reuploadRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": -1, "message": "file_name and file_size are required"})
+		c.JSON(http.StatusBadRequest, gin.H{"code": errcode.BadRequest, "message": "file_name and file_size are required"})
 		return
 	}
 
 	result, err := h.parseSvc.InitReupload(c.Request.Context(), skillID, req.FileName, req.FileSize, identity.UID, spaceID)
 	if err != nil {
 		if errors.Is(err, parse.ErrInvalidFileName) {
-			c.JSON(http.StatusBadRequest, gin.H{"code": -1, "message": "file_name must end with .zip"})
+			c.JSON(http.StatusBadRequest, gin.H{"code": errcode.BadRequest, "message": "file_name must end with .zip"})
 			return
 		}
 		if errors.Is(err, parse.ErrFileTooLarge) {
-			c.JSON(http.StatusBadRequest, gin.H{"code": -1, "message": "file exceeds upload size limit"})
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"code": errcode.FileTooLarge, "message": "file exceeds upload size limit"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"code": -1, "message": "internal error"})
+		c.JSON(http.StatusInternalServerError, gin.H{"code": errcode.InternalError, "message": "internal error"})
 		return
 	}
 
@@ -206,7 +207,7 @@ func (h *Handler) InitReupload(c *gin.Context) {
 func (h *Handler) Download(c *gin.Context) {
 	identity, ok := middleware.Identity(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"code": -1, "message": "unauthorized"})
+		c.JSON(http.StatusUnauthorized, gin.H{"code": errcode.Unauthorized, "message": "unauthorized"})
 		return
 	}
 	spaceID := middleware.SpaceID(c)
@@ -215,21 +216,21 @@ func (h *Handler) Download(c *gin.Context) {
 	skill, err := h.skillSvc.Get(c.Request.Context(), skillID, spaceID, identity.UID)
 	if err != nil {
 		if errors.Is(err, skillsvc.ErrNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"code": -1, "message": "not found"})
+			c.JSON(http.StatusNotFound, gin.H{"code": errcode.NotFound, "message": "not found"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"code": -1, "message": "internal error"})
+		c.JSON(http.StatusInternalServerError, gin.H{"code": errcode.InternalError, "message": "internal error"})
 		return
 	}
 
 	if skill.FileURL == "" {
-		c.JSON(http.StatusNotFound, gin.H{"code": -1, "message": "no file available"})
+		c.JSON(http.StatusNotFound, gin.H{"code": errcode.NotFound, "message": "no file available"})
 		return
 	}
 
 	downloadURL, err := h.parseSvc.GetDownloadURL(c.Request.Context(), skill.FileURL)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"code": -1, "message": "internal error"})
+		c.JSON(http.StatusInternalServerError, gin.H{"code": errcode.InternalError, "message": "internal error"})
 		return
 	}
 

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/Mininglamp-OSS/octo-marketplace/internal/api/errcode"
 	"github.com/Mininglamp-OSS/octo-marketplace/internal/middleware"
 	skillsvc "github.com/Mininglamp-OSS/octo-marketplace/internal/service/skill"
 	"github.com/gin-gonic/gin"
@@ -35,7 +36,7 @@ func (h *Handler) Register(rg *gin.RouterGroup) {
 func (h *Handler) List(c *gin.Context) {
 	identity, ok := middleware.Identity(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"code": -1, "message": "unauthorized"})
+		c.JSON(http.StatusUnauthorized, gin.H{"code": errcode.Unauthorized, "message": "unauthorized"})
 		return
 	}
 	spaceID := middleware.SpaceID(c)
@@ -50,7 +51,7 @@ func (h *Handler) List(c *gin.Context) {
 		Limit:      limit,
 	})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"code": -1, "message": "internal error"})
+		c.JSON(http.StatusInternalServerError, gin.H{"code": errcode.InternalError, "message": "internal error"})
 		return
 	}
 
@@ -67,7 +68,7 @@ func (h *Handler) List(c *gin.Context) {
 func (h *Handler) ListMine(c *gin.Context) {
 	identity, ok := middleware.Identity(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"code": -1, "message": "unauthorized"})
+		c.JSON(http.StatusUnauthorized, gin.H{"code": errcode.Unauthorized, "message": "unauthorized"})
 		return
 	}
 	spaceID := middleware.SpaceID(c)
@@ -81,7 +82,7 @@ func (h *Handler) ListMine(c *gin.Context) {
 		Limit:   limit,
 	})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"code": -1, "message": "internal error"})
+		c.JSON(http.StatusInternalServerError, gin.H{"code": errcode.InternalError, "message": "internal error"})
 		return
 	}
 
@@ -98,7 +99,7 @@ func (h *Handler) ListMine(c *gin.Context) {
 func (h *Handler) Get(c *gin.Context) {
 	identity, ok := middleware.Identity(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"code": -1, "message": "unauthorized"})
+		c.JSON(http.StatusUnauthorized, gin.H{"code": errcode.Unauthorized, "message": "unauthorized"})
 		return
 	}
 	spaceID := middleware.SpaceID(c)
@@ -107,10 +108,10 @@ func (h *Handler) Get(c *gin.Context) {
 	item, err := h.svc.Get(c.Request.Context(), id, spaceID, identity.UID)
 	if err != nil {
 		if errors.Is(err, skillsvc.ErrNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"code": -1, "message": "not found"})
+			c.JSON(http.StatusNotFound, gin.H{"code": errcode.NotFound, "message": "not found"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"code": -1, "message": "internal error"})
+		c.JSON(http.StatusInternalServerError, gin.H{"code": errcode.InternalError, "message": "internal error"})
 		return
 	}
 
@@ -135,14 +136,14 @@ type createRequest struct {
 func (h *Handler) Create(c *gin.Context) {
 	identity, ok := middleware.Identity(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"code": -1, "message": "unauthorized"})
+		c.JSON(http.StatusUnauthorized, gin.H{"code": errcode.Unauthorized, "message": "unauthorized"})
 		return
 	}
 	spaceID := middleware.SpaceID(c)
 
 	var req createRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": -1, "message": "parse_task_id is required"})
+		c.JSON(http.StatusBadRequest, gin.H{"code": errcode.BadRequest, "message": "parse_task_id is required"})
 		return
 	}
 
@@ -160,18 +161,18 @@ func (h *Handler) Create(c *gin.Context) {
 	})
 	if err != nil {
 		if errors.Is(err, skillsvc.ErrInvalidParseTask) {
-			c.JSON(http.StatusBadRequest, gin.H{"code": -1, "message": "invalid or unavailable parse task"})
+			c.JSON(http.StatusBadRequest, gin.H{"code": errcode.BadRequest, "message": "invalid or unavailable parse task"})
 			return
 		}
 		if errors.Is(err, skillsvc.ErrParseTaskConsumed) {
-			c.JSON(http.StatusConflict, gin.H{"code": -1, "message": "parse task already consumed"})
+			c.JSON(http.StatusConflict, gin.H{"code": errcode.Conflict, "message": "parse task already consumed"})
 			return
 		}
 		if errors.Is(err, skillsvc.ErrCategoryNotFound) {
-			c.JSON(http.StatusBadRequest, gin.H{"code": -1, "message": "category not found"})
+			c.JSON(http.StatusBadRequest, gin.H{"code": errcode.BadRequest, "message": "category not found"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"code": -1, "message": "internal error"})
+		c.JSON(http.StatusInternalServerError, gin.H{"code": errcode.InternalError, "message": "internal error"})
 		return
 	}
 
@@ -196,7 +197,7 @@ type updateRequest struct {
 func (h *Handler) Update(c *gin.Context) {
 	identity, ok := middleware.Identity(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"code": -1, "message": "unauthorized"})
+		c.JSON(http.StatusUnauthorized, gin.H{"code": errcode.Unauthorized, "message": "unauthorized"})
 		return
 	}
 	spaceID := middleware.SpaceID(c)
@@ -204,7 +205,7 @@ func (h *Handler) Update(c *gin.Context) {
 
 	var req updateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": -1, "message": "invalid request body"})
+		c.JSON(http.StatusBadRequest, gin.H{"code": errcode.BadRequest, "message": "invalid request body"})
 		return
 	}
 
@@ -219,22 +220,22 @@ func (h *Handler) Update(c *gin.Context) {
 	})
 	if err != nil {
 		if errors.Is(err, skillsvc.ErrNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"code": -1, "message": "not found"})
+			c.JSON(http.StatusNotFound, gin.H{"code": errcode.NotFound, "message": "not found"})
 			return
 		}
 		if errors.Is(err, skillsvc.ErrCategoryNotFound) {
-			c.JSON(http.StatusBadRequest, gin.H{"code": -1, "message": "category not found"})
+			c.JSON(http.StatusBadRequest, gin.H{"code": errcode.BadRequest, "message": "category not found"})
 			return
 		}
 		if errors.Is(err, skillsvc.ErrInvalidParseTask) {
-			c.JSON(http.StatusBadRequest, gin.H{"code": -1, "message": "invalid or unavailable parse task"})
+			c.JSON(http.StatusBadRequest, gin.H{"code": errcode.BadRequest, "message": "invalid or unavailable parse task"})
 			return
 		}
 		if errors.Is(err, skillsvc.ErrParseTaskConsumed) {
-			c.JSON(http.StatusConflict, gin.H{"code": -1, "message": "parse task already consumed"})
+			c.JSON(http.StatusConflict, gin.H{"code": errcode.Conflict, "message": "parse task already consumed"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"code": -1, "message": "internal error"})
+		c.JSON(http.StatusInternalServerError, gin.H{"code": errcode.InternalError, "message": "internal error"})
 		return
 	}
 
@@ -248,7 +249,7 @@ func (h *Handler) Update(c *gin.Context) {
 func (h *Handler) Delete(c *gin.Context) {
 	identity, ok := middleware.Identity(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"code": -1, "message": "unauthorized"})
+		c.JSON(http.StatusUnauthorized, gin.H{"code": errcode.Unauthorized, "message": "unauthorized"})
 		return
 	}
 	spaceID := middleware.SpaceID(c)
@@ -257,10 +258,10 @@ func (h *Handler) Delete(c *gin.Context) {
 	err := h.svc.Delete(c.Request.Context(), id, identity.UID, spaceID)
 	if err != nil {
 		if errors.Is(err, skillsvc.ErrNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"code": -1, "message": "not found"})
+			c.JSON(http.StatusNotFound, gin.H{"code": errcode.NotFound, "message": "not found"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"code": -1, "message": "internal error"})
+		c.JSON(http.StatusInternalServerError, gin.H{"code": errcode.InternalError, "message": "internal error"})
 		return
 	}
 

@@ -2,6 +2,8 @@
 
 Environment variables configure the API service.
 
+## Core Settings
+
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
 | `MYSQL_DSN` | yes | — | Marketplace MySQL DSN |
@@ -18,6 +20,19 @@ Environment variables configure the API service.
 | `HTTP_WRITE_TIMEOUT` | no | `30s` | Response write timeout |
 | `HTTP_IDLE_TIMEOUT` | no | `60s` | Keep-alive idle timeout |
 | `SKIP_MIGRATION` | no | `false` | Skip embedded SQL migrations when `true` |
+
+## Storage Settings
+
+| Variable | Required | Default | Description |
+| --- | --- | --- | --- |
+| `STORAGE_DRIVER` | no | `local` | Storage backend: `local` (filesystem) or `oss` (Alibaba Cloud OSS / S3-compatible) |
+| `LOCAL_STORAGE_DIR` | no | `/tmp/marketplace-uploads` | Local filesystem directory (when STORAGE_DRIVER=local) |
+| `MAX_UPLOAD_MB` | no | `20` | Maximum upload file size in megabytes |
+| `OSS_ENDPOINT` | when oss | — | OSS endpoint URL (e.g. `https://oss-cn-hangzhou.aliyuncs.com`) |
+| `OSS_BUCKET` | when oss | — | OSS bucket name |
+| `OSS_ACCESS_KEY` | when oss | — | OSS access key ID |
+| `OSS_SECRET_KEY` | when oss | — | OSS secret access key |
+| `OSS_PUBLIC_BASE_URL` | no | — | Public-facing base URL for client downloads |
 
 Example:
 
@@ -52,3 +67,62 @@ Enabled mode validates tokens through
 `POST /v1/auth/verify?include=context`, requires `X-Space-Id`, and verifies that
 the authenticated user belongs to the requested Space. Production deployments
 must set `AUTH_ENABLED=true`.
+
+## API Endpoints
+
+### Public (no auth required)
+- `GET /healthz` — Liveness check
+- `GET /readyz` — Readiness check (verifies DB connection)
+
+### Authenticated (`/api/v1/*`)
+
+All routes require authentication (token via `Token:` or `Authorization: Bearer` header, plus `X-Space-Id` header when AUTH_ENABLED=true).
+
+#### Session
+- `GET /api/v1/session` — Current user identity
+
+#### Categories
+- `GET /api/v1/skill/categories` — List all categories with visible skill counts
+
+#### Admin Categories (operations dashboard)
+- `POST /api/v1/skill/admin/categories` — Create category (`name` required, optional `icon_key`, `sort_order`)
+- `PUT /api/v1/skill/admin/categories/:id` — Update category
+- `DELETE /api/v1/skill/admin/categories/:id` — Delete category (returns 409 if skills exist in category)
+
+#### Skills
+- `GET /api/v1/skill` — List skills (visibility-filtered, supports `?q=`, `?category_id=`, `?cursor=`, `?limit=`)
+- `GET /api/v1/skill/mine` — List my skills
+- `GET /api/v1/skill/:id` — Get skill detail (visibility-checked)
+- `POST /api/v1/skill` — Create skill (from completed parse task)
+- `PUT /api/v1/skill/:id` — Update skill (owner only, returns 404 for non-owner)
+- `DELETE /api/v1/skill/:id` — Delete skill (owner only, returns 404 for non-owner)
+
+#### Upload & Parse
+- `POST /api/v1/skill/upload/init` — Initialize upload (returns presigned URL + upload_id)
+- `POST /api/v1/skill/upload/:uploadId/parse` — Trigger zip parsing
+- `GET /api/v1/skill/parse/:taskId` — Poll parse task status
+- `POST /api/v1/skill/:id/reupload/init` — Initialize reupload for existing skill (owner only)
+- `GET /api/v1/skill/:id/download` — Download skill file (302 redirect to presigned URL)
+
+## Error Response Format
+
+All error responses use a unified JSON format:
+
+```json
+{
+  "code": "err.marketplace.xxx",
+  "message": "Human-readable error message"
+}
+```
+
+Standard error codes:
+- `err.marketplace.bad_request` — Invalid parameters (HTTP 400)
+- `err.marketplace.unauthorized` — Missing or invalid authentication (HTTP 401)
+- `err.marketplace.not_found` — Resource not found or permission denied (HTTP 404)
+- `err.marketplace.permission_denied` — Insufficient permissions (HTTP 403)
+- `err.marketplace.file_too_large` — Upload exceeds MAX_UPLOAD_MB (HTTP 413)
+- `err.marketplace.invalid_zip` — Invalid ZIP archive (HTTP 400)
+- `err.marketplace.skill_md_not_found` — skill.md not found in ZIP (HTTP 400)
+- `err.marketplace.category_in_use` — Category has skills, cannot delete (HTTP 409)
+- `err.marketplace.conflict` — Resource conflict (HTTP 409)
+- `err.marketplace.internal_error` — Internal server error (HTTP 500)

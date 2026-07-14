@@ -22,14 +22,14 @@ func (r *Repo) ListWithCount(ctx context.Context, spaceID, userID string) ([]Cat
 		FROM categories c
 		LEFT JOIN skills s ON s.category_id = c.id
 			AND (
-				s.visibility = 'public'
+				(s.visibility = 'public' AND s.space_id = ?)
 				OR (s.visibility = 'space' AND s.space_id = ?)
 				OR (s.visibility = 'private' AND s.owner_id = ? AND s.space_id = ?)
 			)
 		GROUP BY c.id, c.name, c.icon_key, c.sort_order
 		ORDER BY (COUNT(s.id) > 0) DESC, c.sort_order ASC, c.name ASC
 	`
-	rows, err := r.db.QueryContext(ctx, query, spaceID, userID, spaceID)
+	rows, err := r.db.QueryContext(ctx, query, spaceID, spaceID, userID, spaceID)
 	if err != nil {
 		return nil, err
 	}
