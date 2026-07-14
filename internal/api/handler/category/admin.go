@@ -12,10 +12,34 @@ import (
 )
 
 // RegisterAdmin registers admin category routes on the given router group.
-func (h *Handler) RegisterAdmin(rg *gin.RouterGroup, idGen func() string) {
-	rg.POST("/skill/admin/categories", h.adminCreate(idGen))
-	rg.PUT("/skill/admin/categories/:id", h.adminUpdate())
-	rg.DELETE("/skill/admin/categories/:id", h.adminDelete())
+// When authEnabled is true, only users with Role "admin" can access these routes.
+func (h *Handler) RegisterAdmin(rg *gin.RouterGroup, idGen func() string, authEnabled bool) {
+	rg.POST("/skill/admin/categories", requireAdmin(authEnabled), h.adminCreate(idGen))
+	rg.PUT("/skill/admin/categories/:id", requireAdmin(authEnabled), h.adminUpdate())
+	rg.DELETE("/skill/admin/categories/:id", requireAdmin(authEnabled), h.adminDelete())
+}
+
+// requireAdmin returns a middleware that enforces admin role when auth is enabled.
+// When auth is disabled (local dev mode), it passes through.
+func requireAdmin(authEnabled bool) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if !authEnabled {
+			c.Next()
+			return
+		}
+		identity, ok := middleware.Identity(c)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"code": errcode.Unauthorized, "message": "unauthorized"})
+			c.Abort()
+			return
+		}
+		if identity.Role != "admin" {
+			c.JSON(http.StatusForbidden, gin.H{"code": errcode.PermissionDenied, "message": "admin access required"})
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
 }
 
 type adminCreateRequest struct {

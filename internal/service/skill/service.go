@@ -411,8 +411,8 @@ func toVisibilityPtr(v string) *model.Visibility {
 func canView(row *skillrepo.SkillRow, spaceID, userID string) bool {
 	switch row.Visibility {
 	case "public":
-		// Public skills are globally visible to all authenticated users.
-		return true
+		// Public skills are visible to all members of the same Space.
+		return row.SpaceID == spaceID
 	case "space":
 		return row.SpaceID == spaceID
 	case "private":

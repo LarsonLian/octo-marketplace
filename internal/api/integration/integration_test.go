@@ -205,18 +205,33 @@ func TestAdminDeleteCategoryNotFound(t *testing.T) {
 
 // --- Skill Visibility Tests ---
 
-func TestGetSkillVisibilityPublic(t *testing.T) {
+func TestGetSkillVisibilityPublicSameSpace(t *testing.T) {
 	engine, mock, db := testSetup(t)
 	defer db.Close()
 
-	// Public skill by another user in another space - should be visible
+	// Public skill by another user in the same space - should be visible
 	mock.ExpectQuery("SELECT .+ FROM skills").
-		WillReturnRows(skillRow("skill-1", "Public Skill", "other-user", "Bob", "other-space", "public"))
+		WillReturnRows(skillRow("skill-1", "Public Skill", "other-user", "Bob", "space-1", "public"))
 
 	w := doRequest(engine, "GET", "/api/v1/skill/skill-1", nil)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status=%d want=%d body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+}
+
+func TestGetSkillVisibilityPublicCrossSpace(t *testing.T) {
+	engine, mock, db := testSetup(t)
+	defer db.Close()
+
+	// Public skill in another space - should return 404 (Space isolation)
+	mock.ExpectQuery("SELECT .+ FROM skills").
+		WillReturnRows(skillRow("skill-1x", "Public Skill", "other-user", "Bob", "other-space", "public"))
+
+	w := doRequest(engine, "GET", "/api/v1/skill/skill-1x", nil)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status=%d want=%d body=%s", w.Code, http.StatusNotFound, w.Body.String())
 	}
 }
 
@@ -610,6 +625,82 @@ func TestReuploadNonOwner(t *testing.T) {
 
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("status=%d want=%d body=%s", w.Code, http.StatusNotFound, w.Body.String())
+	}
+}
+
+// --- Admin Auth Tests (AUTH_ENABLED=true) ---
+
+func TestAdminCreateCategoryNonAdminForbidden(t *testing.T) {
+	// Create a router with AUTH_ENABLED=true but a non-admin user
+	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	_ = mock
+
+	// Auth enabled, user role is "member" (not admin)
+	auth := marketmiddleware.NewAuthenticator(false, nil, model.Identity{
+		UID:  "user-1",
+		Name: "Alice",
+		Role: "member",
+	}, "space-1")
+	storageCfg := router.StorageConfig{
+		Driver:   "local",
+		LocalDir: t.TempDir(),
+		BaseURL:  "http://localhost:8092",
+		MaxMB:    20,
+	}
+	// Use PublicWithAuthEnabled to test with auth enabled admin checks
+	engine := router.PublicWithDBAndAuth(db, auth, storageCfg, true)
+
+	w := doRequest(engine, "POST", "/api/v1/skill/admin/categories", map[string]interface{}{
+		"name":     "Test",
+		"icon_key": "star",
+	})
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status=%d want=%d body=%s", w.Code, http.StatusForbidden, w.Body.String())
+	}
+	body := parseBody(t, w)
+	if body["code"] != errcode.PermissionDenied {
+		t.Errorf("code=%v want=%v", body["code"], errcode.PermissionDenied)
+	}
+}
+
+func TestAdminCreateCategoryAdminAllowed(t *testing.T) {
+	// Create a router with AUTH_ENABLED=true and an admin user
+	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	// Auth enabled, user role is "admin"
+	auth := marketmiddleware.NewAuthenticator(false, nil, model.Identity{
+		UID:  "admin-1",
+		Name: "Admin",
+		Role: "admin",
+	}, "space-1")
+	storageCfg := router.StorageConfig{
+		Driver:   "local",
+		LocalDir: t.TempDir(),
+		BaseURL:  "http://localhost:8092",
+		MaxMB:    20,
+	}
+	engine := router.PublicWithDBAndAuth(db, auth, storageCfg, true)
+
+	mock.ExpectExec("INSERT INTO categories").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	w := doRequest(engine, "POST", "/api/v1/skill/admin/categories", map[string]interface{}{
+		"name":       "Admin Category",
+		"icon_key":   "shield",
+		"sort_order": 1,
+	})
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("status=%d want=%d body=%s", w.Code, http.StatusCreated, w.Body.String())
 	}
 }
 

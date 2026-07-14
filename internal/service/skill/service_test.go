@@ -18,18 +18,18 @@ func TestCanView(t *testing.T) {
 		expected bool
 	}{
 		{
-			name:     "public is globally visible",
+			name:     "public same space is visible",
 			row:      &skillrepo.SkillRow{Visibility: "public", SpaceID: "s1", OwnerID: "u1"},
 			spaceID:  "s1",
 			userID:   "u2",
 			expected: true,
 		},
 		{
-			name:     "public is visible cross-space",
+			name:     "public cross-space is hidden",
 			row:      &skillrepo.SkillRow{Visibility: "public", SpaceID: "s1", OwnerID: "u1"},
 			spaceID:  "s2",
 			userID:   "u2",
-			expected: true,
+			expected: false,
 		},
 		{
 			name:     "space same space",

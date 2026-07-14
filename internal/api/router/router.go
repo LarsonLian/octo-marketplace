@@ -38,6 +38,10 @@ type StorageConfig struct {
 }
 
 func Public(database Pinger, authenticator *marketmiddleware.Authenticator, storageCfg StorageConfig) *gin.Engine {
+	return publicWithOptions(database, authenticator, storageCfg, authenticator.AuthEnabled())
+}
+
+func publicWithOptions(database Pinger, authenticator *marketmiddleware.Authenticator, storageCfg StorageConfig, authEnabled bool) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery(), corsMiddleware())
 
@@ -102,7 +106,7 @@ func Public(database Pinger, authenticator *marketmiddleware.Authenticator, stor
 
 		catH := categoryhandler.New(catSvc)
 		catH.Register(v1)
-		catH.RegisterAdmin(v1, generateID)
+		catH.RegisterAdmin(v1, generateID, authEnabled)
 		skillhandler.New(skSvc).Register(v1)
 
 		// Wire up upload/parse/download handlers
@@ -145,4 +149,10 @@ func generateID() string {
 // directly (useful for integration tests with sqlmock).
 func PublicWithDB(db *sql.DB, authenticator *marketmiddleware.Authenticator, storageCfg StorageConfig) *gin.Engine {
 	return Public(db, authenticator, storageCfg)
+}
+
+// PublicWithDBAndAuth is a test helper that overrides the authEnabled flag for admin routes.
+// This allows testing admin authorization independently of the authenticator middleware mode.
+func PublicWithDBAndAuth(db *sql.DB, authenticator *marketmiddleware.Authenticator, storageCfg StorageConfig, authEnabled bool) *gin.Engine {
+	return publicWithOptions(db, authenticator, storageCfg, authEnabled)
 }
