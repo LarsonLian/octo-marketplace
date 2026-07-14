@@ -1,6 +1,6 @@
 module github.com/Mininglamp-OSS/octo-marketplace
 
-go 1.25
+go 1.24
 
 require (
 	github.com/gin-gonic/gin v1.10.0
