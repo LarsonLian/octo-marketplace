@@ -4,22 +4,25 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 
 	"github.com/Mininglamp-OSS/octo-marketplace/internal/model"
 	categoryrepo "github.com/Mininglamp-OSS/octo-marketplace/internal/repository/category"
 	skillrepo "github.com/Mininglamp-OSS/octo-marketplace/internal/repository/skill"
+	"github.com/Mininglamp-OSS/octo-marketplace/internal/storage"
 )
 
 // Service handles business logic for skills.
 type Service struct {
 	repo    *skillrepo.Repo
 	catRepo *categoryrepo.Repo
+	store   storage.Storage
 	idGen   func() string
 }
 
 // New creates a skill service.
-func New(repo *skillrepo.Repo, catRepo *categoryrepo.Repo, idGen func() string) *Service {
-	return &Service{repo: repo, catRepo: catRepo, idGen: idGen}
+func New(repo *skillrepo.Repo, catRepo *categoryrepo.Repo, store storage.Storage, idGen func() string) *Service {
+	return &Service{repo: repo, catRepo: catRepo, store: store, idGen: idGen}
 }
 
 // ErrNotFound indicates the skill was not found or access denied.
@@ -151,6 +154,10 @@ func (s *Service) Create(ctx context.Context, p CreateParams) (*SkillItem, error
 	if pt.SpaceID != p.SpaceID {
 		return nil, ErrInvalidParseTask
 	}
+	// Reject reupload tasks — they must be used with PUT update, not POST create
+	if pt.SkillID != "" {
+		return nil, ErrInvalidParseTask
+	}
 
 	// Validate category
 	if p.CategoryID != "" {
@@ -197,6 +204,10 @@ func (s *Service) Create(ctx context.Context, p CreateParams) (*SkillItem, error
 	}
 
 	id := s.idGen()
+
+	// Compute final object key: skills/{skill_id}/v{version}/{file_name}
+	finalKey := fmt.Sprintf("skills/%s/v%s/%s", id, version, pt.FileName)
+
 	row, err := s.repo.CreateSkillAndConsumeTask(ctx, p.ParseTaskID, skillrepo.CreateParams{
 		ID:            id,
 		Name:          name,
@@ -210,7 +221,7 @@ func (s *Service) Create(ctx context.Context, p CreateParams) (*SkillItem, error
 		Version:       version,
 		ReadmeContent: readmeContent,
 		FileName:      pt.FileName,
-		FileURL:       pt.FileURL,
+		FileURL:       finalKey,
 		FileSize:      pt.FileSize,
 		FileSHA256:    pt.FileSHA256,
 	})
@@ -219,6 +230,14 @@ func (s *Service) Create(ctx context.Context, p CreateParams) (*SkillItem, error
 			return nil, ErrParseTaskConsumed
 		}
 		return nil, err
+	}
+
+	// Relocate the file from temporary upload path to permanent path
+	if pt.FileURL != finalKey {
+		if copyErr := s.store.CopyObject(ctx, pt.FileURL, finalKey); copyErr != nil {
+			// Log but don't fail — the temporary key is still valid for now
+			_ = copyErr
+		}
 	}
 
 	item := rowToItem(row)
@@ -288,11 +307,22 @@ func (s *Service) Update(ctx context.Context, id, userID, spaceID string, p Upda
 			return nil, ErrInvalidParseTask
 		}
 
+		// Determine version for final key
+		version := row.Version
+		if p.Version != nil {
+			version = *p.Version
+		} else if pt.ResultVersion != "" {
+			version = pt.ResultVersion
+		}
+
+		// Compute final object key
+		finalKey := fmt.Sprintf("skills/%s/v%s/%s", id, version, pt.FileName)
+
 		// Apply file metadata from parse task
 		repoParams.FileName = &pt.FileName
-		repoParams.FileURL = &pt.FileURL
 		repoParams.FileSize = &pt.FileSize
 		repoParams.FileSHA256 = &pt.FileSHA256
+		repoParams.FileURL = &finalKey
 
 		// Apply parsed content if not overridden in the request
 		if pt.ResultReadme != nil {
@@ -312,10 +342,31 @@ func (s *Service) Update(ctx context.Context, id, userID, spaceID string, p Upda
 			repoParams.Tags = pt.ResultTags
 		}
 
-		// Mark parse task as consumed
-		if err := s.repo.MarkParseTaskConsumed(ctx, p.ParseTaskID); err != nil {
+		// Transactionally update skill and consume parse task
+		taskSkillID := pt.SkillID
+		if taskSkillID == "" {
+			taskSkillID = id // for tasks not explicitly linked
+		}
+		err = s.repo.UpdateSkillAndConsumeTask(ctx, id, repoParams, p.ParseTaskID, userID, spaceID, taskSkillID)
+		if err != nil {
+			if errors.Is(err, skillrepo.ErrParseTaskAlreadyConsumed) {
+				return nil, ErrParseTaskConsumed
+			}
 			return nil, err
 		}
+
+		// Relocate the file from temporary upload path to permanent path
+		if pt.FileURL != finalKey {
+			_ = s.store.CopyObject(ctx, pt.FileURL, finalKey)
+		}
+
+		// Re-fetch to return updated data
+		updated, err := s.repo.GetByID(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		item := rowToItem(updated)
+		return &item, nil
 	}
 
 	_, err = s.repo.Update(ctx, id, repoParams)

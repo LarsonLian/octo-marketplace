@@ -124,3 +124,33 @@ func (s *LocalStorage) WriteObject(key string, r io.Reader) error {
 	}
 	return nil
 }
+
+// CopyObject copies a file from srcKey to dstKey within the local filesystem.
+func (s *LocalStorage) CopyObject(_ context.Context, srcKey, dstKey string) error {
+	srcFull, err := s.safePath(srcKey)
+	if err != nil {
+		return err
+	}
+	dstFull, err := s.safePath(dstKey)
+	if err != nil {
+		return err
+	}
+	src, err := os.Open(srcFull)
+	if err != nil {
+		return fmt.Errorf("local storage: copy open src: %w", err)
+	}
+	defer src.Close()
+
+	if err := os.MkdirAll(filepath.Dir(dstFull), 0o755); err != nil {
+		return fmt.Errorf("local storage: copy mkdir: %w", err)
+	}
+	dst, err := os.Create(dstFull)
+	if err != nil {
+		return fmt.Errorf("local storage: copy create dst: %w", err)
+	}
+	defer dst.Close()
+	if _, err := io.Copy(dst, src); err != nil {
+		return fmt.Errorf("local storage: copy: %w", err)
+	}
+	return nil
+}

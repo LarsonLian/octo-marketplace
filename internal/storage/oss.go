@@ -106,3 +106,17 @@ func (s *OSSStorage) DeleteObject(ctx context.Context, key string) error {
 	}
 	return nil
 }
+
+// CopyObject copies an object from srcKey to dstKey within the same bucket.
+func (s *OSSStorage) CopyObject(ctx context.Context, srcKey, dstKey string) error {
+	copySource := fmt.Sprintf("%s/%s", s.bucket, srcKey)
+	_, err := s.client.CopyObject(ctx, &s3.CopyObjectInput{
+		Bucket:     aws.String(s.bucket),
+		CopySource: aws.String(copySource),
+		Key:        aws.String(dstKey),
+	})
+	if err != nil {
+		return fmt.Errorf("oss copy object: %w", err)
+	}
+	return nil
+}

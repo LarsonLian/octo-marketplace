@@ -20,4 +20,8 @@ type Storage interface {
 
 	// DeleteObject removes an object from storage.
 	DeleteObject(ctx context.Context, key string) error
+
+	// CopyObject copies an object from src to dst key. Used to relocate
+	// uploaded files from temporary paths to permanent skill paths.
+	CopyObject(ctx context.Context, srcKey, dstKey string) error
 }

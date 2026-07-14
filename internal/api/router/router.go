@@ -73,13 +73,7 @@ func Public(database Pinger, authenticator *marketmiddleware.Authenticator, stor
 		catRepo := categoryrepo.New(db)
 		skRepo := skillrepo.New(db)
 
-		catSvc := categorysvc.New(catRepo)
-		skSvc := skillsvc.New(skRepo, catRepo, generateID)
-
-		categoryhandler.New(catSvc).Register(v1)
-		skillhandler.New(skSvc).Register(v1)
-
-		// Wire up upload/parse/download handlers
+		// Initialize storage first (needed by skill service)
 		var store storage.Storage
 		var localStorage *storage.LocalStorage
 		switch storageCfg.Driver {
@@ -102,6 +96,14 @@ func Public(database Pinger, authenticator *marketmiddleware.Authenticator, stor
 		default:
 			panic("unsupported STORAGE_DRIVER: " + storageCfg.Driver)
 		}
+
+		catSvc := categorysvc.New(catRepo)
+		skSvc := skillsvc.New(skRepo, catRepo, store, generateID)
+
+		categoryhandler.New(catSvc).Register(v1)
+		skillhandler.New(skSvc).Register(v1)
+
+		// Wire up upload/parse/download handlers
 
 		parseRepo := parsesvc.NewRepo(db)
 		worker := parsesvc.NewWorker(store, parseRepo)

@@ -24,8 +24,8 @@ type UpdateParams struct {
 	FileSHA256    *string
 }
 
-// Update updates the specified fields on a skill. Returns the number of affected rows.
-func (r *Repo) Update(ctx context.Context, id string, p UpdateParams) (int64, error) {
+// buildUpdateSets constructs the SET clause parts and args for an UPDATE query.
+func buildUpdateSets(p UpdateParams) ([]string, []interface{}) {
 	var sets []string
 	var args []interface{}
 
@@ -74,6 +74,17 @@ func (r *Repo) Update(ctx context.Context, id string, p UpdateParams) (int64, er
 		args = append(args, *p.FileSHA256)
 	}
 
+	return sets, args
+}
+
+// joinStrings joins strings with a separator.
+func joinStrings(s []string, sep string) string {
+	return strings.Join(s, sep)
+}
+
+// Update updates the specified fields on a skill. Returns the number of affected rows.
+func (r *Repo) Update(ctx context.Context, id string, p UpdateParams) (int64, error) {
+	sets, args := buildUpdateSets(p)
 	if len(sets) == 0 {
 		return 0, nil
 	}
