@@ -71,7 +71,7 @@ func TestCanView(t *testing.T) {
 			row:      &skillrepo.SkillRow{Visibility: "private", SpaceID: "s1", OwnerID: "u1"},
 			spaceID:  "s2",
 			userID:   "u1",
-			expected: true,
+			expected: false,
 		},
 		{
 			name:     "unknown visibility",

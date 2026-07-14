@@ -59,19 +59,19 @@ func (r *Repo) List(ctx context.Context, f ListFilter) (*ListResult, error) {
 	var args []interface{}
 
 	if f.MineOnly {
-		conditions = append(conditions, "s.owner_id = ?")
-		args = append(args, f.UserID)
+		conditions = append(conditions, "s.owner_id = ? AND s.space_id = ?")
+		args = append(args, f.UserID, f.SpaceID)
 	} else {
 		// Visibility filter:
 		// - public: globally visible to all users
 		// - space: visible to members of the same space
-		// - private: visible only to the owner
+		// - private: visible only to the owner within the same space
 		conditions = append(conditions, `(
 			s.visibility = 'public'
 			OR (s.visibility = 'space' AND s.space_id = ?)
-			OR (s.visibility = 'private' AND s.owner_id = ?)
+			OR (s.visibility = 'private' AND s.owner_id = ? AND s.space_id = ?)
 		)`)
-		args = append(args, f.SpaceID, f.UserID)
+		args = append(args, f.SpaceID, f.UserID, f.SpaceID)
 	}
 
 	if f.CategoryID != "" {

@@ -313,7 +313,7 @@ func canView(row *skillrepo.SkillRow, spaceID, userID string) bool {
 	case "space":
 		return row.SpaceID == spaceID
 	case "private":
-		return row.OwnerID == userID
+		return row.OwnerID == userID && row.SpaceID == spaceID
 	default:
 		return false
 	}
