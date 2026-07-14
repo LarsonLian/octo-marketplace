@@ -1,0 +1,342 @@
+package skill
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+
+	"github.com/Mininglamp-OSS/octo-marketplace/internal/model"
+	categoryrepo "github.com/Mininglamp-OSS/octo-marketplace/internal/repository/category"
+	skillrepo "github.com/Mininglamp-OSS/octo-marketplace/internal/repository/skill"
+)
+
+// Service handles business logic for skills.
+type Service struct {
+	repo     *skillrepo.Repo
+	catRepo  *categoryrepo.Repo
+	idGen    func() string
+}
+
+// New creates a skill service.
+func New(repo *skillrepo.Repo, catRepo *categoryrepo.Repo, idGen func() string) *Service {
+	return &Service{repo: repo, catRepo: catRepo, idGen: idGen}
+}
+
+// ErrNotFound indicates the skill was not found or access denied.
+var ErrNotFound = errors.New("skill not found")
+
+// ErrForbidden indicates the user does not own the skill.
+var ErrForbidden = errors.New("forbidden")
+
+// ErrInvalidParseTask indicates the parse task is invalid for creating a skill.
+var ErrInvalidParseTask = errors.New("invalid parse task")
+
+// ErrCategoryNotFound indicates the specified category does not exist.
+var ErrCategoryNotFound = errors.New("category not found")
+
+// SkillItem is the API-facing representation of a skill.
+type SkillItem struct {
+	ID            string          `json:"id"`
+	Name          string          `json:"name"`
+	Description   string          `json:"description"`
+	CategoryID    string          `json:"category_id"`
+	Tags          json.RawMessage `json:"tags"`
+	OwnerID       string          `json:"owner_id"`
+	OwnerName     string          `json:"owner_name"`
+	SpaceID       string          `json:"space_id"`
+	Visibility    string          `json:"visibility"`
+	Version       string          `json:"version"`
+	ReadmeContent string          `json:"readme_content,omitempty"`
+	FileName      string          `json:"file_name"`
+	FileURL       string          `json:"file_url"`
+	FileSize      int64           `json:"file_size"`
+	FileSHA256    string          `json:"file_sha256"`
+	CreatedAt     string          `json:"created_at"`
+	UpdatedAt     string          `json:"updated_at"`
+}
+
+// ListResult holds paginated skill items.
+type ListResult struct {
+	Items      []SkillItem `json:"items"`
+	NextCursor *string     `json:"next_cursor"`
+}
+
+// ListParams are the parameters for listing skills.
+type ListParams struct {
+	SpaceID    string
+	UserID     string
+	Query      string
+	CategoryID string
+	Cursor     string
+	Limit      int
+}
+
+// List returns skills visible to the user.
+func (s *Service) List(ctx context.Context, p ListParams) (*ListResult, error) {
+	repoResult, err := s.repo.List(ctx, skillrepo.ListFilter{
+		SpaceID:    p.SpaceID,
+		UserID:     p.UserID,
+		Query:      p.Query,
+		CategoryID: p.CategoryID,
+		Cursor:     p.Cursor,
+		Limit:      p.Limit,
+		MineOnly:   false,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return s.toListResult(repoResult), nil
+}
+
+// ListMine returns skills owned by the user.
+func (s *Service) ListMine(ctx context.Context, p ListParams) (*ListResult, error) {
+	repoResult, err := s.repo.List(ctx, skillrepo.ListFilter{
+		SpaceID:  p.SpaceID,
+		UserID:   p.UserID,
+		Query:    p.Query,
+		Cursor:   p.Cursor,
+		Limit:    p.Limit,
+		MineOnly: true,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return s.toListResult(repoResult), nil
+}
+
+// Get returns a single skill by ID, checking visibility.
+func (s *Service) Get(ctx context.Context, id, spaceID, userID string) (*SkillItem, error) {
+	row, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if row == nil {
+		return nil, ErrNotFound
+	}
+	if !canView(row, spaceID, userID) {
+		return nil, ErrNotFound
+	}
+	item := rowToItem(row)
+	return &item, nil
+}
+
+// CreateParams holds the request data for creating a skill.
+type CreateParams struct {
+	ParseTaskID string
+	Name        string
+	Description string
+	CategoryID  string
+	Tags        json.RawMessage
+	Visibility  string
+	Version     string
+	UserID      string
+	UserName    string
+	SpaceID     string
+}
+
+// Create creates a new skill from a completed parse task.
+func (s *Service) Create(ctx context.Context, p CreateParams) (*SkillItem, error) {
+	// Validate parse task
+	pt, err := s.repo.GetParseTask(ctx, p.ParseTaskID)
+	if err != nil {
+		return nil, err
+	}
+	if pt == nil || pt.OwnerID != p.UserID || pt.Status != "success" {
+		return nil, ErrInvalidParseTask
+	}
+
+	// Validate category
+	if p.CategoryID != "" {
+		exists, err := s.catRepo.Exists(ctx, p.CategoryID)
+		if err != nil {
+			return nil, err
+		}
+		if !exists {
+			return nil, ErrCategoryNotFound
+		}
+	}
+
+	// Use parse task results as defaults, allow override
+	name := p.Name
+	if name == "" {
+		name = pt.ResultName
+	}
+	description := p.Description
+	if description == "" && pt.ResultDescription != nil {
+		description = *pt.ResultDescription
+	}
+	version := p.Version
+	if version == "" {
+		version = pt.ResultVersion
+	}
+	if version == "" {
+		version = "1.0.0"
+	}
+	tags := p.Tags
+	if tags == nil {
+		tags = pt.ResultTags
+	}
+	if tags == nil {
+		tags = json.RawMessage(`[]`)
+	}
+	readmeContent := ""
+	if pt.ResultReadme != nil {
+		readmeContent = *pt.ResultReadme
+	}
+
+	visibility := p.Visibility
+	if visibility == "" {
+		visibility = "space"
+	}
+
+	id := s.idGen()
+	row, err := s.repo.Create(ctx, skillrepo.CreateParams{
+		ID:            id,
+		Name:          name,
+		Description:   description,
+		CategoryID:    p.CategoryID,
+		Tags:          tags,
+		OwnerID:       p.UserID,
+		OwnerName:     p.UserName,
+		SpaceID:       p.SpaceID,
+		Visibility:    toVisibility(visibility),
+		Version:       version,
+		ReadmeContent: readmeContent,
+		FileName:      fmt.Sprintf("skill-%s.zip", id[:8]),
+		FileURL:       pt.FileURL,
+		FileSize:      0,
+		FileSHA256:    "",
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Mark parse task as consumed
+	_ = s.repo.MarkParseTaskConsumed(ctx, p.ParseTaskID)
+
+	item := rowToItem(row)
+	return &item, nil
+}
+
+// UpdateParams holds fields to update.
+type UpdateParams struct {
+	Name        *string
+	Description *string
+	CategoryID  *string
+	Tags        json.RawMessage
+	Visibility  *string
+	Version     *string
+}
+
+// Update updates a skill. Only the owner can update.
+func (s *Service) Update(ctx context.Context, id, userID string, p UpdateParams) (*SkillItem, error) {
+	row, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if row == nil || row.OwnerID != userID {
+		return nil, ErrNotFound
+	}
+
+	// Validate category if changing
+	if p.CategoryID != nil && *p.CategoryID != "" {
+		exists, err := s.catRepo.Exists(ctx, *p.CategoryID)
+		if err != nil {
+			return nil, err
+		}
+		if !exists {
+			return nil, ErrCategoryNotFound
+		}
+	}
+
+	var vis *model.Visibility
+	if p.Visibility != nil {
+		vis = toVisibilityPtr(*p.Visibility)
+	}
+
+	_, err = s.repo.Update(ctx, id, skillrepo.UpdateParams{
+		Name:        p.Name,
+		Description: p.Description,
+		CategoryID:  p.CategoryID,
+		Tags:        p.Tags,
+		Visibility:  vis,
+		Version:     p.Version,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Re-fetch to return updated data
+	updated, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	item := rowToItem(updated)
+	return &item, nil
+}
+
+// Delete hard-deletes a skill. Only the owner can delete.
+func (s *Service) Delete(ctx context.Context, id, userID string) error {
+	row, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if row == nil || row.OwnerID != userID {
+		return ErrNotFound
+	}
+	_, err = s.repo.Delete(ctx, id)
+	return err
+}
+
+func toVisibility(v string) model.Visibility {
+	return model.Visibility(v)
+}
+
+func toVisibilityPtr(v string) *model.Visibility {
+	vis := model.Visibility(v)
+	return &vis
+}
+
+func canView(row *skillrepo.SkillRow, spaceID, userID string) bool {
+	switch row.Visibility {
+	case "public":
+		return row.SpaceID == spaceID
+	case "space":
+		return row.SpaceID == spaceID
+	case "private":
+		return row.OwnerID == userID
+	default:
+		return false
+	}
+}
+
+func rowToItem(row *skillrepo.SkillRow) SkillItem {
+	return SkillItem{
+		ID:            row.ID,
+		Name:          row.Name,
+		Description:   row.Description,
+		CategoryID:    row.CategoryID,
+		Tags:          row.Tags,
+		OwnerID:       row.OwnerID,
+		OwnerName:     row.OwnerName,
+		SpaceID:       row.SpaceID,
+		Visibility:    row.Visibility,
+		Version:       row.Version,
+		ReadmeContent: row.ReadmeContent,
+		FileName:      row.FileName,
+		FileURL:       row.FileURL,
+		FileSize:      row.FileSize,
+		FileSHA256:    row.FileSHA256,
+		CreatedAt:     row.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+		UpdatedAt:     row.UpdatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+	}
+}
+
+func (s *Service) toListResult(r *skillrepo.ListResult) *ListResult {
+	items := make([]SkillItem, 0, len(r.Items))
+	for i := range r.Items {
+		items = append(items, rowToItem(&r.Items[i]))
+	}
+	return &ListResult{Items: items, NextCursor: r.NextCursor}
+}

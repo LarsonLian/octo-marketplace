@@ -2,9 +2,18 @@ package router
 
 import (
 	"context"
+	"crypto/rand"
+	"database/sql"
+	"fmt"
 	"net/http"
 
+	categoryhandler "github.com/Mininglamp-OSS/octo-marketplace/internal/api/handler/category"
+	skillhandler "github.com/Mininglamp-OSS/octo-marketplace/internal/api/handler/skill"
 	marketmiddleware "github.com/Mininglamp-OSS/octo-marketplace/internal/middleware"
+	categoryrepo "github.com/Mininglamp-OSS/octo-marketplace/internal/repository/category"
+	skillrepo "github.com/Mininglamp-OSS/octo-marketplace/internal/repository/skill"
+	categorysvc "github.com/Mininglamp-OSS/octo-marketplace/internal/service/category"
+	skillsvc "github.com/Mininglamp-OSS/octo-marketplace/internal/service/skill"
 	"github.com/gin-gonic/gin"
 )
 
@@ -41,6 +50,20 @@ func Public(database Pinger, authenticator *marketmiddleware.Authenticator) *gin
 			"space_id": marketmiddleware.SpaceID(c),
 		})
 	})
+
+	// Wire up skill marketplace handlers
+	db, ok := database.(*sql.DB)
+	if ok {
+		catRepo := categoryrepo.New(db)
+		skRepo := skillrepo.New(db)
+
+		catSvc := categorysvc.New(catRepo)
+		skSvc := skillsvc.New(skRepo, catRepo, generateID)
+
+		categoryhandler.New(catSvc).Register(v1)
+		skillhandler.New(skSvc).Register(v1)
+	}
+
 	return r
 }
 
@@ -56,3 +79,13 @@ func corsMiddleware() gin.HandlerFunc {
 		c.Next()
 	}
 }
+
+// generateID produces a UUID v4 string.
+func generateID() string {
+	var b [16]byte
+	_, _ = rand.Read(b[:])
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+}
+
