@@ -3,6 +3,7 @@ package category
 import (
 	"net/http"
 
+	"github.com/Mininglamp-OSS/octo-marketplace/internal/api/errcode"
 	"github.com/Mininglamp-OSS/octo-marketplace/internal/middleware"
 	categorysvc "github.com/Mininglamp-OSS/octo-marketplace/internal/service/category"
 	"github.com/gin-gonic/gin"
@@ -27,14 +28,14 @@ func (h *Handler) Register(rg *gin.RouterGroup) {
 func (h *Handler) List(c *gin.Context) {
 	identity, ok := middleware.Identity(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"code": -1, "message": "unauthorized"})
+		c.JSON(http.StatusUnauthorized, gin.H{"code": errcode.Unauthorized, "message": "unauthorized"})
 		return
 	}
 	spaceID := middleware.SpaceID(c)
 
 	items, err := h.svc.List(c.Request.Context(), spaceID, identity.UID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"code": -1, "message": "internal error"})
+		c.JSON(http.StatusInternalServerError, gin.H{"code": errcode.InternalError, "message": "internal error"})
 		return
 	}
 

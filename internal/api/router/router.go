@@ -100,7 +100,9 @@ func Public(database Pinger, authenticator *marketmiddleware.Authenticator, stor
 		catSvc := categorysvc.New(catRepo)
 		skSvc := skillsvc.New(skRepo, catRepo, store, generateID)
 
-		categoryhandler.New(catSvc).Register(v1)
+		catH := categoryhandler.New(catSvc)
+		catH.Register(v1)
+		catH.RegisterAdmin(v1, generateID)
 		skillhandler.New(skSvc).Register(v1)
 
 		// Wire up upload/parse/download handlers
@@ -137,4 +139,10 @@ func generateID() string {
 	b[6] = (b[6] & 0x0f) | 0x40
 	b[8] = (b[8] & 0x3f) | 0x80
 	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+}
+
+// PublicWithDB is a convenience wrapper that creates the engine with a *sql.DB
+// directly (useful for integration tests with sqlmock).
+func PublicWithDB(db *sql.DB, authenticator *marketmiddleware.Authenticator, storageCfg StorageConfig) *gin.Engine {
+	return Public(db, authenticator, storageCfg)
 }
