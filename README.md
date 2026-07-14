@@ -31,6 +31,10 @@ Marketplace business models and APIs are intentionally deferred.
 go run ./cmd/marketplace-api
 ```
 
+See [`CONFIGURATION.md`](CONFIGURATION.md) for environment variables. The API
+runs embedded SQL migrations at startup; set `SKIP_MIGRATION=true` only when
+migrations are managed externally.
+
 The API listens on port `8092`. Docker Compose exposes MySQL on local port
 `3306`.
 

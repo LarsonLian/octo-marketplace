@@ -27,7 +27,6 @@ services:
       MYSQL_ROOT_PASSWORD: root
     volumes:
       - mysqldata:/var/lib/mysql
-      - ./migrations/sql/20260714-00-baseline.sql:/docker-entrypoint-initdb.d/001_init.sql
     ports:
       - "3306:3306"
     healthcheck:

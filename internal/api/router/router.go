@@ -1,12 +1,16 @@
 package router
 
 import (
-	"database/sql"
+	"context"
 	"encoding/json"
 	"net/http"
 )
 
-func Public(database *sql.DB) http.Handler {
+type Pinger interface {
+	PingContext(context.Context) error
+}
+
+func Public(database Pinger) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", jsonStatus(http.StatusOK, "ok"))
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {

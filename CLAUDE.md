@@ -24,6 +24,7 @@ make build
 make test
 make fmt
 make vet
+make lint
 
 make run-api
 docker compose up --build

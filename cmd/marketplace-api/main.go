@@ -24,8 +24,20 @@ func main() {
 		log.Fatal(err)
 	}
 	defer database.Close()
+	if n, err := marketdb.RunMigrations(database); err != nil {
+		log.Fatalf("[main] migration failed: %v", err)
+	} else if n > 0 {
+		log.Printf("[main] applied %d migration(s)", n)
+	}
 
-	publicServer := &http.Server{Addr: ":" + cfg.APIPort, Handler: router.Public(database)}
+	publicServer := &http.Server{
+		Addr:              ":" + cfg.APIPort,
+		Handler:           router.Public(database),
+		ReadHeaderTimeout: cfg.ReadHeaderTimeout,
+		ReadTimeout:       cfg.ReadTimeout,
+		WriteTimeout:      cfg.WriteTimeout,
+		IdleTimeout:       cfg.IdleTimeout,
+	}
 	go serve("public", publicServer)
 
 	stop := make(chan os.Signal, 1)

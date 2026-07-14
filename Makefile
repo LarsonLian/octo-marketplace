@@ -1,4 +1,4 @@
-.PHONY: build test fmt vet run-api docker-build
+.PHONY: build test fmt vet lint run-api docker-build
 
 build:
 	go build ./...
@@ -11,6 +11,9 @@ fmt:
 
 vet:
 	go vet ./...
+
+lint:
+	golangci-lint run
 
 run-api:
 	go run ./cmd/marketplace-api

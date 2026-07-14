@@ -31,6 +31,7 @@ make test
 # Format and vet
 make fmt
 make vet
+make lint
 
 # Run locally
 make run-api
