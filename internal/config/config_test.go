@@ -58,3 +58,54 @@ func TestAuthEnabledRequiresOctoAPIURL(t *testing.T) {
 		t.Fatal("ValidateAPI() error=nil want OCTO_API_URL error")
 	}
 }
+
+func TestOSSConfigDefaults(t *testing.T) {
+	t.Setenv("MYSQL_DSN", "test-dsn")
+	t.Setenv("OSS_ENDPOINT", "")
+	t.Setenv("OSS_BUCKET", "")
+	t.Setenv("OSS_ACCESS_KEY", "")
+	t.Setenv("OSS_SECRET_KEY", "")
+	t.Setenv("OSS_PUBLIC_BASE_URL", "")
+	t.Setenv("MAX_UPLOAD_MB", "")
+
+	cfg := Load()
+	if cfg.OSSEndpoint != "" {
+		t.Fatalf("OSSEndpoint=%q want empty", cfg.OSSEndpoint)
+	}
+	if cfg.OSSBucket != "" {
+		t.Fatalf("OSSBucket=%q want empty", cfg.OSSBucket)
+	}
+	if cfg.MaxUploadMB != 20 {
+		t.Fatalf("MaxUploadMB=%d want=20", cfg.MaxUploadMB)
+	}
+}
+
+func TestOSSConfigFromEnv(t *testing.T) {
+	t.Setenv("MYSQL_DSN", "test-dsn")
+	t.Setenv("OSS_ENDPOINT", "https://oss.example.com")
+	t.Setenv("OSS_BUCKET", "my-bucket")
+	t.Setenv("OSS_ACCESS_KEY", "ak")
+	t.Setenv("OSS_SECRET_KEY", "sk")
+	t.Setenv("OSS_PUBLIC_BASE_URL", "https://cdn.example.com/")
+	t.Setenv("MAX_UPLOAD_MB", "50")
+
+	cfg := Load()
+	if cfg.OSSEndpoint != "https://oss.example.com" {
+		t.Fatalf("OSSEndpoint=%q", cfg.OSSEndpoint)
+	}
+	if cfg.OSSBucket != "my-bucket" {
+		t.Fatalf("OSSBucket=%q", cfg.OSSBucket)
+	}
+	if cfg.OSSAccessKey != "ak" {
+		t.Fatalf("OSSAccessKey=%q", cfg.OSSAccessKey)
+	}
+	if cfg.OSSSecretKey != "sk" {
+		t.Fatalf("OSSSecretKey=%q", cfg.OSSSecretKey)
+	}
+	if cfg.OSSPublicBase != "https://cdn.example.com" {
+		t.Fatalf("OSSPublicBase=%q want trailing slash trimmed", cfg.OSSPublicBase)
+	}
+	if cfg.MaxUploadMB != 50 {
+		t.Fatalf("MaxUploadMB=%d want=50", cfg.MaxUploadMB)
+	}
+}

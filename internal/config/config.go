@@ -22,6 +22,16 @@ type Config struct {
 	ReadTimeout       time.Duration
 	WriteTimeout      time.Duration
 	IdleTimeout       time.Duration
+
+	// Object storage (OSS/S3) configuration for skill file uploads.
+	StorageDriver   string // "local" or "oss"
+	LocalStorageDir string
+	OSSEndpoint     string
+	OSSBucket       string
+	OSSAccessKey    string
+	OSSSecretKey    string
+	OSSPublicBase   string
+	MaxUploadMB     int
 }
 
 func Load() Config {
@@ -39,6 +49,15 @@ func Load() Config {
 		ReadTimeout:       envDuration("HTTP_READ_TIMEOUT", 15*time.Second),
 		WriteTimeout:      envDuration("HTTP_WRITE_TIMEOUT", 30*time.Second),
 		IdleTimeout:       envDuration("HTTP_IDLE_TIMEOUT", 60*time.Second),
+
+		StorageDriver:   env("STORAGE_DRIVER", "local"),
+		LocalStorageDir: env("LOCAL_STORAGE_DIR", "/tmp/marketplace-uploads"),
+		OSSEndpoint:     env("OSS_ENDPOINT", ""),
+		OSSBucket:       env("OSS_BUCKET", ""),
+		OSSAccessKey:    env("OSS_ACCESS_KEY", ""),
+		OSSSecretKey:    env("OSS_SECRET_KEY", ""),
+		OSSPublicBase:   strings.TrimRight(env("OSS_PUBLIC_BASE_URL", ""), "/"),
+		MaxUploadMB:     envInt("MAX_UPLOAD_MB", 20),
 	}
 }
 

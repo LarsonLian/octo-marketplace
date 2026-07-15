@@ -31,6 +31,11 @@ func NewAuthenticator(enabled bool, resolver auth.Resolver, devIdentity model.Id
 	}
 }
 
+// AuthEnabled returns whether authentication is enabled.
+func (a *Authenticator) AuthEnabled() bool {
+	return a.enabled
+}
+
 func (a *Authenticator) Handler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if !a.enabled {

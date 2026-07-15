@@ -22,9 +22,13 @@ func testAuthenticator() *marketmiddleware.Authenticator {
 	return marketmiddleware.NewAuthenticator(false, nil, model.Identity{UID: "dev-user", Name: "Developer"}, "dev-space")
 }
 
+func testStorageConfig() StorageConfig {
+	return StorageConfig{Driver: "local", LocalDir: "/tmp/marketplace-test-uploads", BaseURL: "http://127.0.0.1:8092", MaxMB: 20}
+}
+
 func TestHealthz(t *testing.T) {
 	recorder := httptest.NewRecorder()
-	Public(stubPinger{}, testAuthenticator()).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	Public(stubPinger{}, testAuthenticator(), testStorageConfig()).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/healthz", nil))
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status=%d want=%d", recorder.Code, http.StatusOK)
 	}
@@ -42,7 +46,7 @@ func TestReadyz(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			recorder := httptest.NewRecorder()
-			Public(stubPinger{err: tt.err}, testAuthenticator()).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+			Public(stubPinger{err: tt.err}, testAuthenticator(), testStorageConfig()).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/readyz", nil))
 			if recorder.Code != tt.want {
 				t.Fatalf("status=%d want=%d", recorder.Code, tt.want)
 			}
@@ -52,7 +56,7 @@ func TestReadyz(t *testing.T) {
 
 func TestSessionUsesDevelopmentIdentity(t *testing.T) {
 	recorder := httptest.NewRecorder()
-	Public(stubPinger{}, testAuthenticator()).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/session", nil))
+	Public(stubPinger{}, testAuthenticator(), testStorageConfig()).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/session", nil))
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status=%d want=%d", recorder.Code, http.StatusOK)
 	}
