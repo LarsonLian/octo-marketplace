@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -14,17 +15,20 @@ import (
 
 // OSSStorage implements Storage using an S3-compatible object store (Aliyun OSS, MinIO, AWS S3, etc.).
 type OSSStorage struct {
-	client *s3.Client
-	bucket string
+	client         *s3.Client
+	bucket         string
+	endpoint       string // internal endpoint (e.g. http://minio:9000)
+	publicEndpoint string // external endpoint reachable by clients (e.g. http://localhost:29000)
 }
 
 // OSSConfig holds the configuration for S3-compatible storage.
 type OSSConfig struct {
-	Endpoint  string
-	Bucket    string
-	AccessKey string
-	SecretKey string
-	Region    string
+	Endpoint       string
+	Bucket         string
+	AccessKey      string
+	SecretKey      string
+	Region         string
+	PublicEndpoint string // if set, presigned URLs will use this instead of Endpoint
 }
 
 // NewOSS creates a Storage backed by an S3-compatible service.
@@ -44,7 +48,20 @@ func NewOSS(cfg OSSConfig) (*OSSStorage, error) {
 		UsePathStyle: true, // Required for most S3-compatible services (OSS, MinIO)
 	})
 
-	return &OSSStorage{client: client, bucket: cfg.Bucket}, nil
+	return &OSSStorage{
+		client:         client,
+		bucket:         cfg.Bucket,
+		endpoint:       strings.TrimRight(cfg.Endpoint, "/"),
+		publicEndpoint: strings.TrimRight(cfg.PublicEndpoint, "/"),
+	}, nil
+}
+
+// rewriteURL replaces the internal endpoint with the public endpoint in presigned URLs.
+func (s *OSSStorage) rewriteURL(url string) string {
+	if s.publicEndpoint == "" || s.endpoint == "" {
+		return url
+	}
+	return strings.Replace(url, s.endpoint, s.publicEndpoint, 1)
 }
 
 // PresignPut generates a presigned PUT URL.
@@ -67,7 +84,7 @@ func (s *OSSStorage) PresignPut(ctx context.Context, key string, contentType str
 	if contentType != "" {
 		h.Set("Content-Type", contentType)
 	}
-	return result.URL, h, nil
+	return s.rewriteURL(result.URL), h, nil
 }
 
 // PresignGet generates a presigned GET URL.
@@ -80,7 +97,7 @@ func (s *OSSStorage) PresignGet(ctx context.Context, key string, expires time.Du
 	if err != nil {
 		return "", fmt.Errorf("oss presign get: %w", err)
 	}
-	return result.URL, nil
+	return s.rewriteURL(result.URL), nil
 }
 
 // GetObject downloads an object from storage.

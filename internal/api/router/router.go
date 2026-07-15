@@ -26,15 +26,16 @@ type Pinger interface {
 
 // StorageConfig holds configuration for the storage layer.
 type StorageConfig struct {
-	Driver       string // "local" or "oss"
-	LocalDir     string
-	BaseURL      string
-	MaxMB        int
-	OSSEndpoint  string
-	OSSBucket    string
-	OSSAccessKey string
-	OSSSecretKey string
-	OSSRegion    string
+	Driver            string // "local" or "oss"
+	LocalDir          string
+	BaseURL           string
+	MaxMB             int
+	OSSEndpoint       string
+	OSSBucket         string
+	OSSAccessKey      string
+	OSSSecretKey      string
+	OSSRegion         string
+	OSSPublicEndpoint string // external endpoint for presigned URLs (e.g. http://localhost:29000)
 }
 
 func Public(database Pinger, authenticator *marketmiddleware.Authenticator, storageCfg StorageConfig) *gin.Engine {
@@ -87,11 +88,12 @@ func publicWithOptions(database Pinger, authenticator *marketmiddleware.Authenti
 			localStorage = ls
 		case "oss":
 			oss, err := storage.NewOSS(storage.OSSConfig{
-				Endpoint:  storageCfg.OSSEndpoint,
-				Bucket:    storageCfg.OSSBucket,
-				AccessKey: storageCfg.OSSAccessKey,
-				SecretKey: storageCfg.OSSSecretKey,
-				Region:    storageCfg.OSSRegion,
+				Endpoint:       storageCfg.OSSEndpoint,
+				Bucket:         storageCfg.OSSBucket,
+				AccessKey:      storageCfg.OSSAccessKey,
+				SecretKey:      storageCfg.OSSSecretKey,
+				Region:         storageCfg.OSSRegion,
+				PublicEndpoint: storageCfg.OSSPublicEndpoint,
 			})
 			if err != nil {
 				panic("storage driver oss: " + err.Error())

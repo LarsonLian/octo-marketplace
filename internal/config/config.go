@@ -30,8 +30,10 @@ type Config struct {
 	OSSBucket       string
 	OSSAccessKey    string
 	OSSSecretKey    string
-	OSSPublicBase   string
-	MaxUploadMB     int
+	OSSPublicBase     string
+	OSSRegion         string
+	OSSPublicEndpoint string // external endpoint for presigned URLs
+	MaxUploadMB       int
 }
 
 func Load() Config {
@@ -56,8 +58,10 @@ func Load() Config {
 		OSSBucket:       env("OSS_BUCKET", ""),
 		OSSAccessKey:    env("OSS_ACCESS_KEY", ""),
 		OSSSecretKey:    env("OSS_SECRET_KEY", ""),
-		OSSPublicBase:   strings.TrimRight(env("OSS_PUBLIC_BASE_URL", ""), "/"),
-		MaxUploadMB:     envInt("MAX_UPLOAD_MB", 20),
+		OSSPublicBase:     strings.TrimRight(env("OSS_PUBLIC_BASE_URL", ""), "/"),
+		OSSRegion:         env("OSS_REGION", "us-east-1"),
+		OSSPublicEndpoint: strings.TrimRight(env("OSS_PUBLIC_ENDPOINT", ""), "/"),
+		MaxUploadMB:       envInt("MAX_UPLOAD_MB", 20),
 	}
 }
 

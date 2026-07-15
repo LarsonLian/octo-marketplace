@@ -3,6 +3,8 @@
 # The credentials below are intentionally simple and must not be used in
 # production. Production deployment must provide rotated secrets and managed
 # persistence through the OCTO deployment repository.
+#
+# Requires: octo-minio-1 running on octo_octo-net (from octo main compose).
 services:
   marketplace-service:
     build:
@@ -16,8 +18,17 @@ services:
       API_PORT: "8092"
       AUTH_ENABLED: "true"
       OCTO_API_URL: "https://im-test.deepminer.com.cn"
-      STORAGE_DRIVER: "local"
-      LOCAL_STORAGE_DIR: "/tmp/marketplace-uploads"
+      STORAGE_DRIVER: "oss"
+      OSS_ENDPOINT: "http://octo-minio-1:9000"
+      OSS_BUCKET: "skill"
+      OSS_ACCESS_KEY: "octo-app"
+      OSS_SECRET_KEY: "27ed0b4f52a7a7bef21bff4bfcfcb0b2"
+      OSS_PUBLIC_BASE_URL: "http://localhost:29000/skill"
+      OSS_PUBLIC_ENDPOINT: "http://localhost:29000"
+      OSS_REGION: "us-east-1"
+    networks:
+      - default
+      - octo-net
     depends_on:
       mysql:
         condition: service_healthy
@@ -38,6 +49,11 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+networks:
+  octo-net:
+    external: true
+    name: octo_octo-net
 
 volumes:
   mysqldata:
