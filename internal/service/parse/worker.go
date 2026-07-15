@@ -229,8 +229,8 @@ func validateSkillName(name string) string {
 		return "name 不能包含连续连字符 --"
 	}
 	for _, c := range name {
-		if !((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-') {
-			return fmt.Sprintf("name 只能包含小写字母、数字和连字符（发现非法字符 '%c'）", c)
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-') {
+			return fmt.Sprintf("name 只能包含字母、数字和连字符（发现非法字符 '%c'）", c)
 		}
 	}
 	return ""
