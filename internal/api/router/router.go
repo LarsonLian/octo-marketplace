@@ -112,7 +112,7 @@ func publicWithOptions(database Pinger, authenticator *marketmiddleware.Authenti
 		// Wire up upload/parse/download handlers
 
 		parseRepo := parsesvc.NewRepo(db)
-		worker := parsesvc.NewWorker(store, parseRepo)
+		worker := parsesvc.NewWorker(store, parseRepo, db)
 		pSvc := parsesvc.NewService(store, parseRepo, worker, generateID, storageCfg.MaxMB)
 
 		uploadH := uploadhandler.New(pSvc, skSvc, localStorage)

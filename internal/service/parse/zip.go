@@ -56,10 +56,15 @@ func ExtractZip(zipPath string, maxZipSize int64) (*ExtractResult, string, strin
 			return nil, "FILE_TOO_LARGE", fmt.Sprintf("extracted content exceeds %dMB limit", maxExtractedSize/(1024*1024))
 		}
 
-		// Look for SKILL.md (case-insensitive) at root level
+		// Look for SKILL.md (case-insensitive) at root level OR one level deep.
+		// Supports both:
+		//   SKILL.md          (root level)
+		//   some-dir/SKILL.md (single top-level subdirectory)
 		name := filepath.Base(f.Name)
 		dir := filepath.Dir(f.Name)
-		if strings.EqualFold(name, "SKILL.md") && (dir == "." || dir == "") {
+		isRoot := dir == "." || dir == ""
+		isOneLevel := !isRoot && !strings.Contains(dir, "/")
+		if strings.EqualFold(name, "SKILL.md") && (isRoot || isOneLevel) {
 			if f.UncompressedSize64 > maxSkillMDSize {
 				return nil, "SKILL_MD_TOO_LARGE", fmt.Sprintf("SKILL.md exceeds %dMB limit", maxSkillMDSize/(1024*1024))
 			}

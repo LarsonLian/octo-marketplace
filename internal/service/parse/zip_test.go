@@ -110,13 +110,16 @@ func TestExtractZip_InvalidZipFile(t *testing.T) {
 }
 
 func TestExtractZip_SkillMDInSubdir(t *testing.T) {
-	// SKILL.md must be at root, not in a subdirectory
+	// SKILL.md one level deep is now supported
 	zipPath := createTestZip(t, map[string][]byte{
-		"subdir/SKILL.md": []byte("# Skill"),
+		"subdir/SKILL.md": []byte("---\nname: test-skill\ndescription: A test\n---\n# Skill"),
 	})
 
-	_, errCode, _ := ExtractZip(zipPath, 20*1024*1024)
-	if errCode != "SKILL_MD_NOT_FOUND" {
-		t.Errorf("errCode = %q, want SKILL_MD_NOT_FOUND (SKILL.md in subdir)", errCode)
+	result, errCode, _ := ExtractZip(zipPath, 20*1024*1024)
+	if errCode != "" {
+		t.Errorf("errCode = %q, want empty (one-level subdir allowed)", errCode)
+	}
+	if result == nil || len(result.SkillMDContent) == 0 {
+		t.Errorf("expected SKILL.md content to be extracted")
 	}
 }

@@ -58,7 +58,7 @@ func (r *Repo) GetByID(ctx context.Context, id string) (*TaskRow, error) {
 	query := `
 		SELECT id, upload_id, file_name, file_size, file_url, status,
 			error_code, error_message,
-			result_name, result_description, result_version, result_tags, result_readme,
+			result_name, result_description, result_version, COALESCE(result_tags, '[]'), result_readme,
 			file_sha256, owner_id, space_id, skill_id, created_at, updated_at
 		FROM parse_tasks
 		WHERE id = ?
@@ -84,7 +84,7 @@ func (r *Repo) GetByUploadID(ctx context.Context, uploadID string) (*TaskRow, er
 	query := `
 		SELECT id, upload_id, file_name, file_size, file_url, status,
 			error_code, error_message,
-			result_name, result_description, result_version, result_tags, result_readme,
+			result_name, result_description, result_version, COALESCE(result_tags, '[]'), result_readme,
 			file_sha256, owner_id, space_id, skill_id, created_at, updated_at
 		FROM parse_tasks
 		WHERE upload_id = ?

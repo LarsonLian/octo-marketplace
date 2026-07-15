@@ -12,6 +12,8 @@ import (
 // UpdateParams holds optional fields to update.
 type UpdateParams struct {
 	Name          *string
+	DisplayName   *string
+	IconURL       *string
 	Description   *string
 	CategoryID    *string
 	Tags          json.RawMessage // nil means no change
@@ -32,6 +34,14 @@ func buildUpdateSets(p UpdateParams) ([]string, []interface{}) {
 	if p.Name != nil {
 		sets = append(sets, "name = ?")
 		args = append(args, *p.Name)
+	}
+	if p.DisplayName != nil {
+		sets = append(sets, "display_name = ?")
+		args = append(args, *p.DisplayName)
+	}
+	if p.IconURL != nil {
+		sets = append(sets, "icon_url = ?")
+		args = append(args, *p.IconURL)
 	}
 	if p.Description != nil {
 		sets = append(sets, "description = ?")

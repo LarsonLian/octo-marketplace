@@ -265,6 +265,59 @@ func (s *Service) GetParseStatus(ctx context.Context, taskID, ownerID string) (*
 	return result, nil
 }
 
+// IconUploadResult is returned from InitIconUpload.
+type IconUploadResult struct {
+	ObjectKey    string            `json:"object_key"`
+	PresignedURL string            `json:"presigned_url"`
+	ExpiresIn    int               `json:"expires_in"`
+	Method       string            `json:"method"`
+	Headers      map[string]string `json:"headers"`
+}
+
+// InitIconUpload generates a presigned URL for uploading a skill icon image.
+func (s *Service) InitIconUpload(ctx context.Context, fileName string, fileSize int64, ownerID string) (*IconUploadResult, error) {
+	// Validate image extension
+	lower := strings.ToLower(fileName)
+	if !strings.HasSuffix(lower, ".png") && !strings.HasSuffix(lower, ".jpg") && !strings.HasSuffix(lower, ".jpeg") && !strings.HasSuffix(lower, ".svg") {
+		return nil, errors.New("file must be an image (png/jpg/jpeg/svg)")
+	}
+	// Limit icon to 2MB
+	if fileSize > 2*1024*1024 {
+		return nil, ErrFileTooLarge
+	}
+
+	id := s.idGen()
+	objectKey := fmt.Sprintf("icons/%s/%s", id, fileName)
+
+	contentType := "image/png"
+	if strings.HasSuffix(lower, ".jpg") || strings.HasSuffix(lower, ".jpeg") {
+		contentType = "image/jpeg"
+	} else if strings.HasSuffix(lower, ".svg") {
+		contentType = "image/svg+xml"
+	}
+
+	iconTTL := time.Hour
+	url, headers, err := s.store.PresignPut(ctx, objectKey, contentType, iconTTL)
+	if err != nil {
+		return nil, fmt.Errorf("presign put icon: %w", err)
+	}
+
+	headerMap := make(map[string]string)
+	for k, v := range headers {
+		if len(v) > 0 {
+			headerMap[k] = v[0]
+		}
+	}
+
+	return &IconUploadResult{
+		ObjectKey:    objectKey,
+		PresignedURL: url,
+		ExpiresIn:    int(iconTTL.Seconds()),
+		Method:       "PUT",
+		Headers:      headerMap,
+	}, nil
+}
+
 // GetDownloadURL generates a presigned download URL for a skill's zip file.
 func (s *Service) GetDownloadURL(ctx context.Context, objectKey string) (string, error) {
 	url, err := s.store.PresignGet(ctx, objectKey, 5*time.Minute)

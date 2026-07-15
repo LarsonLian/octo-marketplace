@@ -3,6 +3,7 @@ package parse
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -10,8 +11,10 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Mininglamp-OSS/octo-marketplace/internal/storage"
 )
@@ -25,15 +28,17 @@ const (
 type Worker struct {
 	store storage.Storage
 	repo  *Repo
+	db    *sql.DB
 	sem   chan struct{}
 	wg    sync.WaitGroup
 }
 
 // NewWorker creates a parse worker with a bounded goroutine pool.
-func NewWorker(store storage.Storage, repo *Repo) *Worker {
+func NewWorker(store storage.Storage, repo *Repo, db *sql.DB) *Worker {
 	return &Worker{
 		store: store,
 		repo:  repo,
+		db:    db,
 		sem:   make(chan struct{}, workerPoolSize),
 	}
 }
@@ -97,9 +102,31 @@ func (w *Worker) process(taskID, objectKey string, maxZipBytes int64) {
 	// 4. Parse frontmatter
 	fm, body := ParseFrontmatter(result.SkillMDContent)
 
+	// 4.1 Validate name (required, hyphen-case, max 64)
+	if errMsg := validateSkillName(fm.Name); errMsg != "" {
+		_ = w.repo.UpdateFailed(ctx, taskID, "INVALID_SKILL_MD", errMsg)
+		return
+	}
+	// 4.2 Validate description (required, max 1024, no < >)
+	if errMsg := validateSkillDescription(fm.Description); errMsg != "" {
+		_ = w.repo.UpdateFailed(ctx, taskID, "INVALID_SKILL_MD", errMsg)
+		return
+	}
+
+	// 4.3 Check name uniqueness (same space, same owner, not deleted)
+	task, err := w.repo.GetByID(ctx, taskID)
+	if err != nil {
+		_ = w.repo.UpdateFailed(ctx, taskID, "INTERNAL_ERROR", "cannot fetch parse task")
+		return
+	}
+	if dupErr := w.checkNameDuplicate(ctx, fm.Name, task.SpaceID, task.OwnerID, task.SkillID); dupErr != "" {
+		_ = w.repo.UpdateFailed(ctx, taskID, "DUPLICATE_NAME", dupErr)
+		return
+	}
+
 	// 5. Sanitize results
-	name := sanitizeString(fm.Name, 128)
-	desc := sanitizeString(fm.Description, 2000)
+	name := sanitizeString(fm.Name, 64)
+	desc := sanitizeString(fm.Description, 1024)
 	version := sanitizeString(fm.Version, 32)
 	if version == "" {
 		version = "1.0.0"
@@ -183,4 +210,71 @@ func replaceNullBytes(s string) string {
 		}
 	}
 	return string(result)
+}
+
+// validateSkillName checks name against hyphen-case rules.
+// Returns empty string if valid, error message if not.
+func validateSkillName(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "SKILL.md 缺少必填字段 name"
+	}
+	if len(name) > 64 {
+		return fmt.Sprintf("name 超过 64 字符限制（当前 %d）", len(name))
+	}
+	if strings.HasPrefix(name, "-") || strings.HasSuffix(name, "-") {
+		return "name 不能以连字符 - 开头或结尾"
+	}
+	if strings.Contains(name, "--") {
+		return "name 不能包含连续连字符 --"
+	}
+	for _, c := range name {
+		if !((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-') {
+			return fmt.Sprintf("name 只能包含小写字母、数字和连字符（发现非法字符 '%c'）", c)
+		}
+	}
+	return ""
+}
+
+// validateSkillDescription checks description rules.
+func validateSkillDescription(desc string) string {
+	desc = strings.TrimSpace(desc)
+	if desc == "" {
+		return "SKILL.md 缺少必填字段 description"
+	}
+	if utf8.RuneCountInString(desc) > 1024 {
+		return fmt.Sprintf("description 超过 1024 字符限制（当前 %d）", utf8.RuneCountInString(desc))
+	}
+	if strings.ContainsAny(desc, "<>") {
+		return "description 不能包含尖括号 < 或 >"
+	}
+	return ""
+}
+
+// checkNameDuplicate checks if a skill name already exists for the same owner in the same space.
+// excludeSkillID is used for re-upload (update) to skip self.
+func (w *Worker) checkNameDuplicate(ctx context.Context, name, spaceID, ownerID, excludeSkillID string) string {
+	query := `
+		SELECT id FROM skills
+		WHERE name = ? AND space_id = ? AND owner_id = ?
+	`
+	args := []interface{}{name, spaceID, ownerID}
+
+	if excludeSkillID != "" {
+		query += " AND id != ?"
+		args = append(args, excludeSkillID)
+	}
+
+	query += " LIMIT 1"
+
+	var existingID string
+	err := w.db.QueryRowContext(ctx, query, args...).Scan(&existingID)
+	if err == sql.ErrNoRows {
+		return ""
+	}
+	if err != nil {
+		log.Printf("[parse-worker] checkNameDuplicate query error: %v", err)
+		return "内部错误：无法验证名称唯一性"
+	}
+	return fmt.Sprintf("skill name \"%s\" 已存在（ID: %s），请使用其他名称", name, existingID)
 }

@@ -3,6 +3,7 @@ package upload
 import (
 	"errors"
 	"io"
+	"log"
 	"net/http"
 
 	"github.com/Mininglamp-OSS/octo-marketplace/internal/api/errcode"
@@ -32,6 +33,7 @@ func New(parseSvc *parse.Service, skillSvc *skillsvc.Service, localStorage *stor
 // Register registers upload/parse/download routes.
 func (h *Handler) Register(rg *gin.RouterGroup) {
 	rg.POST("/skill/upload/init", h.InitUpload)
+	rg.POST("/skill/upload/icon", h.InitIconUpload)
 	rg.POST("/skill/upload/:uploadId/parse", h.TriggerParse)
 	rg.GET("/skill/parse/:taskId", h.PollParse)
 	rg.POST("/skill/:id/reupload/init", h.InitReupload)
@@ -111,6 +113,7 @@ func (h *Handler) TriggerParse(c *gin.Context) {
 			c.JSON(http.StatusConflict, gin.H{"code": errcode.Conflict, "message": "parse already triggered"})
 			return
 		}
+		log.Printf("[TriggerParse] internal error for uploadID=%s: %v", uploadID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"code": errcode.InternalError, "message": "internal error"})
 		return
 	}
@@ -137,6 +140,42 @@ func (h *Handler) PollParse(c *gin.Context) {
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"code": errcode.InternalError, "message": "internal error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 0,
+		"data": result,
+	})
+}
+
+// iconUploadRequest is the JSON body for POST /api/v1/skill/upload/icon.
+type iconUploadRequest struct {
+	FileName string `json:"file_name" binding:"required"`
+	FileSize int64  `json:"file_size" binding:"required"`
+}
+
+// InitIconUpload handles POST /api/v1/skill/upload/icon.
+func (h *Handler) InitIconUpload(c *gin.Context) {
+	identity, ok := middleware.Identity(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": errcode.Unauthorized, "message": "unauthorized"})
+		return
+	}
+
+	var req iconUploadRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": errcode.BadRequest, "message": "file_name and file_size are required"})
+		return
+	}
+
+	result, err := h.parseSvc.InitIconUpload(c.Request.Context(), req.FileName, req.FileSize, identity.UID)
+	if err != nil {
+		if errors.Is(err, parse.ErrFileTooLarge) {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"code": errcode.FileTooLarge, "message": "icon exceeds 2MB limit"})
+			return
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"code": errcode.BadRequest, "message": err.Error()})
 		return
 	}
 

@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
+	"strings"
+	"time"
 
 	"github.com/Mininglamp-OSS/octo-marketplace/internal/model"
 	categoryrepo "github.com/Mininglamp-OSS/octo-marketplace/internal/repository/category"
@@ -44,6 +47,8 @@ var ErrCategoryNotFound = errors.New("category not found")
 type SkillItem struct {
 	ID            string          `json:"id"`
 	Name          string          `json:"name"`
+	DisplayName   string          `json:"display_name"`
+	IconURL       string          `json:"icon_url"`
 	Description   string          `json:"description"`
 	CategoryID    string          `json:"category_id"`
 	Tags          json.RawMessage `json:"tags"`
@@ -91,7 +96,7 @@ func (s *Service) List(ctx context.Context, p ListParams) (*ListResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	return s.toListResult(repoResult), nil
+	return s.toListResult(ctx, repoResult), nil
 }
 
 // ListMine returns skills owned by the user.
@@ -107,7 +112,7 @@ func (s *Service) ListMine(ctx context.Context, p ListParams) (*ListResult, erro
 	if err != nil {
 		return nil, err
 	}
-	return s.toListResult(repoResult), nil
+	return s.toListResult(ctx, repoResult), nil
 }
 
 // Get returns a single skill by ID, checking visibility.
@@ -122,7 +127,7 @@ func (s *Service) Get(ctx context.Context, id, spaceID, userID string) (*SkillIt
 	if !canView(row, spaceID, userID) {
 		return nil, ErrNotFound
 	}
-	item := rowToItem(row)
+	item := s.rowToItem(ctx, row)
 	return &item, nil
 }
 
@@ -130,6 +135,8 @@ func (s *Service) Get(ctx context.Context, id, spaceID, userID string) (*SkillIt
 type CreateParams struct {
 	ParseTaskID string
 	Name        string
+	DisplayName string
+	IconURL     string
 	Description string
 	CategoryID  string
 	Tags        json.RawMessage
@@ -219,6 +226,8 @@ func (s *Service) Create(ctx context.Context, p CreateParams) (*SkillItem, error
 	row, err := s.repo.CreateSkillAndConsumeTask(ctx, p.ParseTaskID, skillrepo.CreateParams{
 		ID:            id,
 		Name:          name,
+		DisplayName:   p.DisplayName,
+		IconURL:       p.IconURL,
 		Description:   description,
 		CategoryID:    p.CategoryID,
 		Tags:          tags,
@@ -240,19 +249,34 @@ func (s *Service) Create(ctx context.Context, p CreateParams) (*SkillItem, error
 		return nil, err
 	}
 
-	item := rowToItem(row)
+	// Record initial version in history
+	if verErr := s.repo.InsertVersion(ctx, model.SkillVersion{
+		ID:        s.idGen(),
+		SkillID:   id,
+		Version:   version,
+		Changelog: "初始发布",
+		Storage:   fmt.Sprintf(`{"type":"s3","object_key":%q}`, finalKey),
+		ChangedBy: p.UserID,
+	}); verErr != nil {
+		log.Printf("[skill] InsertVersion failed for skill %s: %v", id, verErr)
+	}
+
+	item := s.rowToItem(ctx, row)
 	return &item, nil
 }
 
 // UpdateParams holds fields to update.
 type UpdateParams struct {
 	Name        *string
+	DisplayName *string
+	IconURL     *string
 	Description *string
 	CategoryID  *string
 	Tags        json.RawMessage
 	Visibility  *string
 	Version     *string
 	ParseTaskID string // optional: if set, applies reupload parse results
+	Changelog   string // version changelog, used when ParseTaskID is set
 }
 
 // Update updates a skill. Only the owner within the same space can update.
@@ -283,6 +307,8 @@ func (s *Service) Update(ctx context.Context, id, userID, spaceID string, p Upda
 
 	repoParams := skillrepo.UpdateParams{
 		Name:        p.Name,
+		DisplayName: p.DisplayName,
+		IconURL:     p.IconURL,
 		Description: p.Description,
 		CategoryID:  p.CategoryID,
 		Tags:        p.Tags,
@@ -363,12 +389,24 @@ func (s *Service) Update(ctx context.Context, id, userID, spaceID string, p Upda
 			return nil, err
 		}
 
+		// Record new version in history
+		if verErr := s.repo.InsertVersion(ctx, model.SkillVersion{
+			ID:        s.idGen(),
+			SkillID:   id,
+			Version:   version,
+			Changelog: p.Changelog,
+			Storage:   fmt.Sprintf(`{"type":"s3","object_key":%q}`, finalKey),
+			ChangedBy: userID,
+		}); verErr != nil {
+			log.Printf("[skill] InsertVersion failed for skill %s v%s: %v", id, version, verErr)
+		}
+
 		// Re-fetch to return updated data
 		updated, err := s.repo.GetByID(ctx, id)
 		if err != nil {
 			return nil, err
 		}
-		item := rowToItem(updated)
+		item := s.rowToItem(ctx, updated)
 		return &item, nil
 	}
 
@@ -382,7 +420,7 @@ func (s *Service) Update(ctx context.Context, id, userID, spaceID string, p Upda
 	if err != nil {
 		return nil, err
 	}
-	item := rowToItem(updated)
+	item := s.rowToItem(ctx, updated)
 	return &item, nil
 }
 
@@ -422,10 +460,19 @@ func canView(row *skillrepo.SkillRow, spaceID, userID string) bool {
 	}
 }
 
-func rowToItem(row *skillrepo.SkillRow) SkillItem {
+func (s *Service) rowToItem(ctx context.Context, row *skillrepo.SkillRow) SkillItem {
+	iconURL := row.IconURL
+	if iconURL != "" && !isURL(iconURL) {
+		// icon_url is an object key — resolve to a presigned download URL
+		if resolved, err := s.store.PresignGet(ctx, iconURL, 1*time.Hour); err == nil {
+			iconURL = resolved
+		}
+	}
 	return SkillItem{
 		ID:            row.ID,
 		Name:          row.Name,
+		DisplayName:   row.DisplayName,
+		IconURL:       iconURL,
 		Description:   row.Description,
 		CategoryID:    row.CategoryID,
 		Tags:          row.Tags,
@@ -444,10 +491,62 @@ func rowToItem(row *skillrepo.SkillRow) SkillItem {
 	}
 }
 
-func (s *Service) toListResult(r *skillrepo.ListResult) *ListResult {
+func (s *Service) toListResult(ctx context.Context, r *skillrepo.ListResult) *ListResult {
 	items := make([]SkillItem, 0, len(r.Items))
 	for i := range r.Items {
-		items = append(items, rowToItem(&r.Items[i]))
+		items = append(items, s.rowToItem(ctx, &r.Items[i]))
 	}
 	return &ListResult{Items: items, NextCursor: r.NextCursor}
+}
+
+// isURL returns true if the string looks like a full URL (not an object key).
+func isURL(s string) bool {
+	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")
+}
+
+// VersionItem is the API-facing representation of a skill version.
+type VersionItem struct {
+	ID        string          `json:"id"`
+	SkillID   string          `json:"skill_id"`
+	Version   string          `json:"version"`
+	Changelog string          `json:"changelog"`
+	Storage   json.RawMessage `json:"storage"`
+	ChangedBy string          `json:"changed_by"`
+	CreatedAt string          `json:"created_at"`
+}
+
+// ListVersions returns version history for a skill. Viewer must have access.
+func (s *Service) ListVersions(ctx context.Context, skillID, spaceID, userID string) ([]VersionItem, error) {
+	row, err := s.repo.GetByID(ctx, skillID)
+	if err != nil {
+		return nil, err
+	}
+	if row == nil || !canView(row, spaceID, userID) {
+		return nil, ErrNotFound
+	}
+
+	rows, err := s.repo.ListVersions(ctx, skillID)
+	if err != nil {
+		return nil, err
+	}
+
+	items := make([]VersionItem, 0, len(rows))
+	for _, r := range rows {
+		var storage json.RawMessage
+		if r.Storage != "" {
+			storage = json.RawMessage(r.Storage)
+		} else {
+			storage = json.RawMessage(`{}`)
+		}
+		items = append(items, VersionItem{
+			ID:        r.ID,
+			SkillID:   r.SkillID,
+			Version:   r.Version,
+			Changelog: r.Changelog,
+			Storage:   storage,
+			ChangedBy: r.ChangedBy,
+			CreatedAt: r.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+		})
+	}
+	return items, nil
 }

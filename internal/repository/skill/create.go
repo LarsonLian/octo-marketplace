@@ -12,6 +12,8 @@ import (
 type CreateParams struct {
 	ID            string
 	Name          string
+	DisplayName   string
+	IconURL       string
 	Description   string
 	CategoryID    string
 	Tags          json.RawMessage
@@ -31,13 +33,13 @@ type CreateParams struct {
 func (r *Repo) Create(ctx context.Context, p CreateParams) (*SkillRow, error) {
 	now := time.Now().UTC()
 	query := `
-		INSERT INTO skills (id, name, description, category_id, tags, owner_id, owner_name,
+		INSERT INTO skills (id, name, display_name, icon_url, description, category_id, tags, owner_id, owner_name,
 			space_id, visibility, version, readme_content, file_name, file_url, file_size,
 			file_sha256, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 	_, err := r.db.ExecContext(ctx, query,
-		p.ID, p.Name, p.Description, p.CategoryID, string(p.Tags),
+		p.ID, p.Name, p.DisplayName, p.IconURL, p.Description, p.CategoryID, string(p.Tags),
 		p.OwnerID, p.OwnerName, p.SpaceID, string(p.Visibility), p.Version,
 		p.ReadmeContent, p.FileName, p.FileURL, p.FileSize, p.FileSHA256,
 		now, now,
@@ -48,6 +50,8 @@ func (r *Repo) Create(ctx context.Context, p CreateParams) (*SkillRow, error) {
 	return &SkillRow{
 		ID:            p.ID,
 		Name:          p.Name,
+		DisplayName:   p.DisplayName,
+		IconURL:       p.IconURL,
 		Description:   p.Description,
 		CategoryID:    p.CategoryID,
 		Tags:          p.Tags,
@@ -93,13 +97,13 @@ func (r *Repo) CreateSkillAndConsumeTask(ctx context.Context, parseTaskID string
 	// Insert the skill
 	now := time.Now().UTC()
 	query := `
-		INSERT INTO skills (id, name, description, category_id, tags, owner_id, owner_name,
+		INSERT INTO skills (id, name, display_name, icon_url, description, category_id, tags, owner_id, owner_name,
 			space_id, visibility, version, readme_content, file_name, file_url, file_size,
 			file_sha256, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 	_, err = tx.ExecContext(ctx, query,
-		p.ID, p.Name, p.Description, p.CategoryID, string(p.Tags),
+		p.ID, p.Name, p.DisplayName, p.IconURL, p.Description, p.CategoryID, string(p.Tags),
 		p.OwnerID, p.OwnerName, p.SpaceID, string(p.Visibility), p.Version,
 		p.ReadmeContent, p.FileName, p.FileURL, p.FileSize, p.FileSHA256,
 		now, now,
@@ -115,6 +119,8 @@ func (r *Repo) CreateSkillAndConsumeTask(ctx context.Context, parseTaskID string
 	return &SkillRow{
 		ID:            p.ID,
 		Name:          p.Name,
+		DisplayName:   p.DisplayName,
+		IconURL:       p.IconURL,
 		Description:   p.Description,
 		CategoryID:    p.CategoryID,
 		Tags:          p.Tags,

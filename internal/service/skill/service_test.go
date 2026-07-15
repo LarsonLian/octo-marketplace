@@ -1,6 +1,7 @@
 package skill
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"testing"
@@ -113,7 +114,8 @@ func TestRowToItemFields(t *testing.T) {
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
-	item := rowToItem(row)
+	svc := &Service{}
+	item := svc.rowToItem(context.Background(), row)
 	if item.ID != "id-1" {
 		t.Errorf("ID = %q", item.ID)
 	}

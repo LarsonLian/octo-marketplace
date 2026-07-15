@@ -27,6 +27,7 @@ func (h *Handler) Register(rg *gin.RouterGroup) {
 	rg.GET("/skill/mine", h.ListMine)
 	rg.GET("/skill", h.List)
 	rg.GET("/skill/:id", h.Get)
+	rg.GET("/skill/:id/versions", h.ListVersions)
 	rg.POST("/skill", h.Create)
 	rg.PUT("/skill/:id", h.Update)
 	rg.DELETE("/skill/:id", h.Delete)
@@ -125,6 +126,8 @@ func (h *Handler) Get(c *gin.Context) {
 type createRequest struct {
 	ParseTaskID string          `json:"parse_task_id" binding:"required"`
 	Name        string          `json:"name"`
+	DisplayName string          `json:"display_name"`
+	IconURL     string          `json:"icon_url"`
 	Description string          `json:"description"`
 	CategoryID  string          `json:"category_id"`
 	Tags        json.RawMessage `json:"tags"`
@@ -150,6 +153,8 @@ func (h *Handler) Create(c *gin.Context) {
 	item, err := h.svc.Create(c.Request.Context(), skillsvc.CreateParams{
 		ParseTaskID: req.ParseTaskID,
 		Name:        req.Name,
+		DisplayName: req.DisplayName,
+		IconURL:     req.IconURL,
 		Description: req.Description,
 		CategoryID:  req.CategoryID,
 		Tags:        req.Tags,
@@ -185,12 +190,15 @@ func (h *Handler) Create(c *gin.Context) {
 // updateRequest is the JSON body for PUT /api/v1/skill/:id.
 type updateRequest struct {
 	Name        *string         `json:"name"`
+	DisplayName *string         `json:"display_name"`
+	IconURL     *string         `json:"icon_url"`
 	Description *string         `json:"description"`
 	CategoryID  *string         `json:"category_id"`
 	Tags        json.RawMessage `json:"tags"`
 	Visibility  *string         `json:"visibility"`
 	Version     *string         `json:"version"`
 	ParseTaskID string          `json:"parse_task_id"`
+	Changelog   string          `json:"changelog"`
 }
 
 // Update handles PUT /api/v1/skill/:id
@@ -211,12 +219,15 @@ func (h *Handler) Update(c *gin.Context) {
 
 	item, err := h.svc.Update(c.Request.Context(), id, identity.UID, spaceID, skillsvc.UpdateParams{
 		Name:        req.Name,
+		DisplayName: req.DisplayName,
+		IconURL:     req.IconURL,
 		Description: req.Description,
 		CategoryID:  req.CategoryID,
 		Tags:        req.Tags,
 		Visibility:  req.Visibility,
 		Version:     req.Version,
 		ParseTaskID: req.ParseTaskID,
+		Changelog:   req.Changelog,
 	})
 	if err != nil {
 		if errors.Is(err, skillsvc.ErrNotFound) {
@@ -266,6 +277,32 @@ func (h *Handler) Delete(c *gin.Context) {
 	}
 
 	c.Status(http.StatusNoContent)
+}
+
+// ListVersions handles GET /api/v1/skill/:id/versions
+func (h *Handler) ListVersions(c *gin.Context) {
+	identity, ok := middleware.Identity(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": errcode.Unauthorized, "message": "unauthorized"})
+		return
+	}
+	spaceID := middleware.SpaceID(c)
+	id := c.Param("id")
+
+	items, err := h.svc.ListVersions(c.Request.Context(), id, spaceID, identity.UID)
+	if err != nil {
+		if errors.Is(err, skillsvc.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"code": errcode.NotFound, "message": "not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"code": errcode.InternalError, "message": "internal error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 0,
+		"data": gin.H{"items": items},
+	})
 }
 
 func parseLimit(s string) int {
