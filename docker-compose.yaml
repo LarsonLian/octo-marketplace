@@ -19,7 +19,7 @@ services:
       AUTH_ENABLED: "true"
       OCTO_API_URL: "https://im-test.deepminer.com.cn"
       STORAGE_DRIVER: "oss"
-      OSS_ENDPOINT: "http://octo-minio-1:9000"
+      OSS_ENDPOINT: "http://172.28.0.2:9000"
       OSS_BUCKET: "skill"
       OSS_ACCESS_KEY: "octo-app"
       OSS_SECRET_KEY: "27ed0b4f52a7a7bef21bff4bfcfcb0b2"

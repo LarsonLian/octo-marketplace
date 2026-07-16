@@ -15,10 +15,9 @@ import (
 
 // OSSStorage implements Storage using an S3-compatible object store (Aliyun OSS, MinIO, AWS S3, etc.).
 type OSSStorage struct {
-	client         *s3.Client
-	bucket         string
-	endpoint       string // internal endpoint (e.g. http://minio:9000)
-	publicEndpoint string // external endpoint reachable by clients (e.g. http://localhost:29000)
+	client       *s3.Client // internal endpoint — for GetObject, CopyObject, DeleteObject
+	presignClient *s3.Client // public endpoint — for presigned URLs (so signature matches client host)
+	bucket       string
 }
 
 // OSSConfig holds the configuration for S3-compatible storage.
@@ -28,7 +27,7 @@ type OSSConfig struct {
 	AccessKey      string
 	SecretKey      string
 	Region         string
-	PublicEndpoint string // if set, presigned URLs will use this instead of Endpoint
+	PublicEndpoint string // if set, presigned URLs use this so signatures match the client-facing host
 }
 
 // NewOSS creates a Storage backed by an S3-compatible service.
@@ -38,35 +37,41 @@ func NewOSS(cfg OSSConfig) (*OSSStorage, error) {
 	}
 	region := cfg.Region
 	if region == "" {
-		region = "us-east-1" // default region for S3-compatible services
+		region = "us-east-1"
 	}
 
+	creds := credentials.NewStaticCredentialsProvider(cfg.AccessKey, cfg.SecretKey, "")
+
+	// Internal client for server-side operations
 	client := s3.New(s3.Options{
 		BaseEndpoint: aws.String(cfg.Endpoint),
 		Region:       region,
-		Credentials:  credentials.NewStaticCredentialsProvider(cfg.AccessKey, cfg.SecretKey, ""),
-		UsePathStyle: true, // Required for most S3-compatible services (OSS, MinIO)
+		Credentials:  creds,
+		UsePathStyle: true,
+	})
+
+	// Presign client: use public endpoint if configured, otherwise same as internal
+	presignEndpoint := cfg.Endpoint
+	if strings.TrimSpace(cfg.PublicEndpoint) != "" {
+		presignEndpoint = cfg.PublicEndpoint
+	}
+	presignCli := s3.New(s3.Options{
+		BaseEndpoint: aws.String(presignEndpoint),
+		Region:       region,
+		Credentials:  creds,
+		UsePathStyle: true,
 	})
 
 	return &OSSStorage{
-		client:         client,
-		bucket:         cfg.Bucket,
-		endpoint:       strings.TrimRight(cfg.Endpoint, "/"),
-		publicEndpoint: strings.TrimRight(cfg.PublicEndpoint, "/"),
+		client:        client,
+		presignClient: presignCli,
+		bucket:        cfg.Bucket,
 	}, nil
 }
 
-// rewriteURL replaces the internal endpoint with the public endpoint in presigned URLs.
-func (s *OSSStorage) rewriteURL(url string) string {
-	if s.publicEndpoint == "" || s.endpoint == "" {
-		return url
-	}
-	return strings.Replace(url, s.endpoint, s.publicEndpoint, 1)
-}
-
-// PresignPut generates a presigned PUT URL.
+// PresignPut generates a presigned PUT URL using the public endpoint.
 func (s *OSSStorage) PresignPut(ctx context.Context, key string, contentType string, expires time.Duration) (string, http.Header, error) {
-	presignClient := s3.NewPresignClient(s.client)
+	pc := s3.NewPresignClient(s.presignClient)
 	input := &s3.PutObjectInput{
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(key),
@@ -75,7 +80,7 @@ func (s *OSSStorage) PresignPut(ctx context.Context, key string, contentType str
 		input.ContentType = aws.String(contentType)
 	}
 
-	result, err := presignClient.PresignPutObject(ctx, input, s3.WithPresignExpires(expires))
+	result, err := pc.PresignPutObject(ctx, input, s3.WithPresignExpires(expires))
 	if err != nil {
 		return "", nil, fmt.Errorf("oss presign put: %w", err)
 	}
@@ -84,23 +89,23 @@ func (s *OSSStorage) PresignPut(ctx context.Context, key string, contentType str
 	if contentType != "" {
 		h.Set("Content-Type", contentType)
 	}
-	return s.rewriteURL(result.URL), h, nil
+	return result.URL, h, nil
 }
 
-// PresignGet generates a presigned GET URL.
+// PresignGet generates a presigned GET URL using the public endpoint.
 func (s *OSSStorage) PresignGet(ctx context.Context, key string, expires time.Duration) (string, error) {
-	presignClient := s3.NewPresignClient(s.client)
-	result, err := presignClient.PresignGetObject(ctx, &s3.GetObjectInput{
+	pc := s3.NewPresignClient(s.presignClient)
+	result, err := pc.PresignGetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(key),
 	}, s3.WithPresignExpires(expires))
 	if err != nil {
 		return "", fmt.Errorf("oss presign get: %w", err)
 	}
-	return s.rewriteURL(result.URL), nil
+	return result.URL, nil
 }
 
-// GetObject downloads an object from storage.
+// GetObject downloads an object from storage (uses internal endpoint).
 func (s *OSSStorage) GetObject(ctx context.Context, key string) (io.ReadCloser, error) {
 	output, err := s.client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(s.bucket),

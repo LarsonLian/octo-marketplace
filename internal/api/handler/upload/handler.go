@@ -37,6 +37,10 @@ func (h *Handler) Register(rg *gin.RouterGroup) {
 	rg.POST("/skill/upload/:uploadId/parse", h.TriggerParse)
 	rg.GET("/skill/parse/:taskId", h.PollParse)
 	rg.POST("/skill/:id/reupload/init", h.InitReupload)
+}
+
+// RegisterDownload registers the download route without auth middleware (presigned URL provides security).
+func (h *Handler) RegisterDownload(rg *gin.RouterGroup) {
 	rg.GET("/skill/:id/download", h.Download)
 }
 
@@ -243,22 +247,13 @@ func (h *Handler) InitReupload(c *gin.Context) {
 }
 
 // Download handles GET /api/v1/skill/:id/download.
+// This endpoint does not require authentication — the presigned URL provides access control.
 func (h *Handler) Download(c *gin.Context) {
-	identity, ok := middleware.Identity(c)
-	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"code": errcode.Unauthorized, "message": "unauthorized"})
-		return
-	}
-	spaceID := middleware.SpaceID(c)
 	skillID := c.Param("id")
 
-	skill, err := h.skillSvc.Get(c.Request.Context(), skillID, spaceID, identity.UID)
+	skill, err := h.skillSvc.GetPublic(c.Request.Context(), skillID)
 	if err != nil {
-		if errors.Is(err, skillsvc.ErrNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"code": errcode.NotFound, "message": "not found"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"code": errcode.InternalError, "message": "internal error"})
+		c.JSON(http.StatusNotFound, gin.H{"code": errcode.NotFound, "message": "not found"})
 		return
 	}
 

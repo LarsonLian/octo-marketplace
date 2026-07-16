@@ -131,6 +131,22 @@ func (s *Service) Get(ctx context.Context, id, spaceID, userID string) (*SkillIt
 	return &item, nil
 }
 
+// GetPublic retrieves a skill by ID without visibility checks (for download endpoint).
+// Returns raw file_url (object key) without presigning — caller will presign for redirect.
+func (s *Service) GetPublic(ctx context.Context, id string) (*SkillItem, error) {
+	row, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if row == nil {
+		return nil, ErrNotFound
+	}
+	return &SkillItem{
+		ID:      row.ID,
+		FileURL: row.FileURL,
+	}, nil
+}
+
 // CreateParams holds the request data for creating a skill.
 type CreateParams struct {
 	ParseTaskID string
@@ -468,6 +484,13 @@ func (s *Service) rowToItem(ctx context.Context, row *skillrepo.SkillRow) SkillI
 			iconURL = resolved
 		}
 	}
+	fileURL := row.FileURL
+	if fileURL != "" && !isURL(fileURL) {
+		// file_url is an object key — resolve to a presigned download URL
+		if resolved, err := s.store.PresignGet(ctx, fileURL, 1*time.Hour); err == nil {
+			fileURL = resolved
+		}
+	}
 	return SkillItem{
 		ID:            row.ID,
 		Name:          row.Name,
@@ -483,7 +506,7 @@ func (s *Service) rowToItem(ctx context.Context, row *skillrepo.SkillRow) SkillI
 		Version:       row.Version,
 		ReadmeContent: row.ReadmeContent,
 		FileName:      row.FileName,
-		FileURL:       row.FileURL,
+		FileURL:       fileURL,
 		FileSize:      row.FileSize,
 		FileSHA256:    row.FileSHA256,
 		CreatedAt:     row.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),

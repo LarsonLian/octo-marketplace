@@ -73,6 +73,9 @@ func (a *Authenticator) Handler() gin.HandlerFunc {
 
 		spaceID := strings.TrimSpace(c.GetHeader("X-Space-Id"))
 		if spaceID == "" {
+			spaceID = strings.TrimSpace(c.Query("space_id"))
+		}
+		if spaceID == "" {
 			abortError(c, http.StatusBadRequest, "err.marketplace.space_required", "X-Space-Id header is required.")
 			return
 		}
@@ -124,6 +127,10 @@ func requestToken(c *gin.Context) string {
 	authorization := strings.TrimSpace(c.GetHeader("Authorization"))
 	if len(authorization) > 7 && strings.EqualFold(authorization[:7], "Bearer ") {
 		return strings.TrimSpace(authorization[7:])
+	}
+	// Fallback: query parameter (used for download links opened in new tabs).
+	if token := strings.TrimSpace(c.Query("token")); token != "" {
+		return token
 	}
 	return ""
 }

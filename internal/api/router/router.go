@@ -119,6 +119,7 @@ func publicWithOptions(database Pinger, authenticator *marketmiddleware.Authenti
 
 		uploadH := uploadhandler.New(pSvc, skSvc, localStorage)
 		uploadH.Register(v1)
+		uploadH.RegisterDownload(r.Group("/api/v1"))
 		uploadH.RegisterLocalProxy(r)
 	}
 
